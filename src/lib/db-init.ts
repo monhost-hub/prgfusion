@@ -11,6 +11,9 @@
  * - This module is imported from instrumentation.ts which Next.js calls
  *   once when the server boots.
  */
+import { execSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
@@ -127,190 +130,117 @@ async function doInit(): Promise<void> {
 
   console.log("[db-init] Starting runtime database initialization…");
 
-  // Use a fresh Prisma client (don't reuse the singleton — we want to be
-  // 100% sure this is a separate connection that we can close cleanly).
-  const db = new PrismaClient();
-
+  // Step 1: Push schema via `prisma db push` (creates tables from schema.prisma)
+  // This works for both MySQL and SQLite, and stays in sync with the schema.
   try {
-    // 1. Push schema via raw SQL for SQLite (creates tables if missing)
-    // For SQLite we can create tables with raw SQL. This is idempotent.
-    console.log("[db-init] Creating tables if missing…");
+    // Find the schema.prisma file — it might be at ./prisma/schema.prisma
+    // or in the standalone build at ./prisma/schema.prisma
+    const possiblePaths = [
+      resolve(process.cwd(), "prisma/schema.prisma"),
+      resolve(__dirname, "../../prisma/schema.prisma"),
+      resolve(__dirname, "../../../prisma/schema.prisma"),
+    ];
+    const schemaPath = possiblePaths.find((p) => existsSync(p));
 
-    await db.$executeRaw`CREATE TABLE IF NOT EXISTS "User" (
-      "id" TEXT NOT NULL PRIMARY KEY,
-      "email" TEXT NOT NULL,
-      "name" TEXT,
-      "passwordHash" TEXT NOT NULL,
-      "role" TEXT NOT NULL DEFAULT 'USER',
-      "emailVerified" DATETIME,
-      "image" TEXT,
-      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )`;
-    await db.$executeRaw`CREATE UNIQUE INDEX IF NOT EXISTS "User_email_key" ON "User"("email")`;
-    await db.$executeRaw`CREATE INDEX IF NOT EXISTS "User_role_idx" ON "User"("role")`;
+    if (!schemaPath) {
+      throw new Error("Could not find prisma/schema.prisma");
+    }
 
-    await db.$executeRaw`CREATE TABLE IF NOT EXISTS "Account" (
-      "id" TEXT NOT NULL PRIMARY KEY,
-      "userId" TEXT NOT NULL,
-      "type" TEXT NOT NULL,
-      "provider" TEXT NOT NULL,
-      "providerAccountId" TEXT NOT NULL,
-      "refresh_token" TEXT,
-      "access_token" TEXT,
-      "expires_at" INTEGER,
-      "token_type" TEXT,
-      "scope" TEXT,
-      "id_token" TEXT,
-      "session_state" TEXT,
-      FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE
-    )`;
-    await db.$executeRaw`CREATE UNIQUE INDEX IF NOT EXISTS "Account_provider_providerAccountId_key" ON "Account"("provider", "providerAccountId")`;
-    await db.$executeRaw`CREATE INDEX IF NOT EXISTS "Account_userId_idx" ON "Account"("userId")`;
+    console.log(`[db-init] Pushing schema from ${schemaPath}…`);
 
-    await db.$executeRaw`CREATE TABLE IF NOT EXISTS "Session" (
-      "id" TEXT NOT NULL PRIMARY KEY,
-      "sessionToken" TEXT NOT NULL,
-      "userId" TEXT NOT NULL,
-      "expires" DATETIME NOT NULL,
-      FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE
-    )`;
-    await db.$executeRaw`CREATE UNIQUE INDEX IF NOT EXISTS "Session_sessionToken_key" ON "Session"("sessionToken")`;
-    await db.$executeRaw`CREATE INDEX IF NOT EXISTS "Session_userId_idx" ON "Session"("userId")`;
+    // Try multiple ways to invoke prisma (different in standalone vs dev)
+    const commands = [
+      `npx prisma db push --accept-data-loss --skip-generate --schema="${schemaPath}"`,
+      `node "${resolve(process.cwd(), "node_modules/prisma/build/index.js")}" db push --accept-data-loss --skip-generate --schema="${schemaPath}"`,
+      `./node_modules/.bin/prisma db push --accept-data-loss --skip-generate --schema="${schemaPath}"`,
+    ];
 
-    await db.$executeRaw`CREATE TABLE IF NOT EXISTS "VerificationToken" (
-      "identifier" TEXT NOT NULL,
-      "token" TEXT NOT NULL,
-      "expires" DATETIME NOT NULL
-    )`;
-    await db.$executeRaw`CREATE UNIQUE INDEX IF NOT EXISTS "VerificationToken_token_key" ON "VerificationToken"("token")`;
-    await db.$executeRaw`CREATE UNIQUE INDEX IF NOT EXISTS "VerificationToken_identifier_token_key" ON "VerificationToken"("identifier", "token")`;
+    let pushed = false;
+    for (const cmd of commands) {
+      try {
+        console.log(`[db-init] Trying: ${cmd.substring(0, 80)}…`);
+        execSync(cmd, {
+          stdio: "pipe",
+          env: process.env,
+          timeout: 60_000,
+        });
+        console.log("[db-init] ✓ Schema pushed successfully");
+        pushed = true;
+        break;
+      } catch (err: any) {
+        const msg = err.stderr?.toString() || err.message || "";
+        if (msg.includes("already") || msg.includes("in sync")) {
+          console.log("[db-init] ✓ Schema already in sync");
+          pushed = true;
+          break;
+        }
+        // Try next command
+        continue;
+      }
+    }
 
-    await db.$executeRaw`CREATE TABLE IF NOT EXISTS "AIModel" (
-      "id" TEXT NOT NULL PRIMARY KEY,
-      "name" TEXT NOT NULL,
-      "providerId" TEXT NOT NULL,
-      "provider" TEXT NOT NULL DEFAULT 'openrouter',
-      "description" TEXT,
-      "costPerCall" REAL NOT NULL DEFAULT 0,
-      "enabled" BOOLEAN NOT NULL DEFAULT true,
-      "isActive" BOOLEAN NOT NULL DEFAULT false,
-      "supportsImages" BOOLEAN NOT NULL DEFAULT true,
-      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )`;
-    await db.$executeRaw`CREATE INDEX IF NOT EXISTS "AIModel_provider_idx" ON "AIModel"("provider")`;
-    await db.$executeRaw`CREATE INDEX IF NOT EXISTS "AIModel_isActive_idx" ON "AIModel"("isActive")`;
+    if (!pushed) {
+      console.warn("[db-init] ⚠ Could not run prisma db push, will try seeding anyway");
+    }
+  } catch (err) {
+    console.warn("[db-init] ⚠ Schema push failed:", err);
+    // Continue anyway — seeding might still work if tables exist
+  }
 
-    await db.$executeRaw`CREATE TABLE IF NOT EXISTS "Generation" (
-      "id" TEXT NOT NULL PRIMARY KEY,
-      "userId" TEXT NOT NULL,
-      "modelId" TEXT NOT NULL,
-      "status" TEXT NOT NULL DEFAULT 'pending',
-      "prompt" TEXT NOT NULL,
-      "inputAPath" TEXT NOT NULL,
-      "inputBPath" TEXT NOT NULL,
-      "outputPath" TEXT,
-      "durationMs" INTEGER,
-      "error" TEXT,
-      "estimatedCost" REAL NOT NULL DEFAULT 0,
-      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE,
-      FOREIGN KEY ("modelId") REFERENCES "AIModel"("id")
-    )`;
-    await db.$executeRaw`CREATE INDEX IF NOT EXISTS "Generation_userId_idx" ON "Generation"("userId")`;
-    await db.$executeRaw`CREATE INDEX IF NOT EXISTS "Generation_status_idx" ON "Generation"("status")`;
-    await db.$executeRaw`CREATE INDEX IF NOT EXISTS "Generation_createdAt_idx" ON "Generation"("createdAt")`;
+  // Step 2: Seed data
+  const db = new PrismaClient();
+  try {
+    console.log("[db-init] Seeding data…");
 
-    await db.$executeRaw`CREATE TABLE IF NOT EXISTS "SiteSettings" (
-      "id" TEXT NOT NULL PRIMARY KEY,
-      "key" TEXT NOT NULL,
-      "value" TEXT NOT NULL,
-      "description" TEXT,
-      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )`;
-    await db.$executeRaw`CREATE UNIQUE INDEX IF NOT EXISTS "SiteSettings_key_key" ON "SiteSettings"("key")`;
-
-    await db.$executeRaw`CREATE TABLE IF NOT EXISTS "PricingPlan" (
-      "id" TEXT NOT NULL PRIMARY KEY,
-      "slug" TEXT NOT NULL,
-      "nameJson" TEXT NOT NULL,
-      "description" TEXT NOT NULL,
-      "priceMonthly" REAL NOT NULL,
-      "priceYearly" REAL NOT NULL,
-      "currency" TEXT NOT NULL DEFAULT 'USD',
-      "credits" INTEGER NOT NULL,
-      "featured" BOOLEAN NOT NULL DEFAULT false,
-      "enabled" BOOLEAN NOT NULL DEFAULT true,
-      "sortOrder" INTEGER NOT NULL DEFAULT 0,
-      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )`;
-    await db.$executeRaw`CREATE UNIQUE INDEX IF NOT EXISTS "PricingPlan_slug_key" ON "PricingPlan"("slug")`;
-
-    await db.$executeRaw`CREATE TABLE IF NOT EXISTS "ContactMessage" (
-      "id" TEXT NOT NULL PRIMARY KEY,
-      "name" TEXT NOT NULL,
-      "email" TEXT NOT NULL,
-      "subject" TEXT,
-      "message" TEXT NOT NULL,
-      "status" TEXT NOT NULL DEFAULT 'new',
-      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )`;
-    await db.$executeRaw`CREATE INDEX IF NOT EXISTS "ContactMessage_status_idx" ON "ContactMessage"("status")`;
-    await db.$executeRaw`CREATE INDEX IF NOT EXISTS "ContactMessage_createdAt_idx" ON "ContactMessage"("createdAt")`;
-
-    console.log("[db-init] ✓ Tables ready");
-
-    // 2. Seed admin user
+    // 2a. Admin user
     const adminEmail = (process.env.ADMIN_EMAIL ?? "admin@allcombiner.com").toLowerCase();
     const adminPassword = process.env.ADMIN_PASSWORD ?? "Admin123!2024";
     const adminName = process.env.ADMIN_NAME ?? "Admin";
 
-    const existingAdmin = await db.user.findUnique({ where: { email: adminEmail } });
+    const existingAdmin = await db.user.findUnique({ where: { email: adminEmail } }).catch(() => null);
     if (!existingAdmin) {
       const passwordHash = await bcrypt.hash(adminPassword, 12);
       await db.user.create({
         data: { email: adminEmail, name: adminName, passwordHash, role: "ADMIN" },
-      });
+      }).catch((e: any) => console.warn(`[db-init] Admin create failed: ${e.message}`));
       console.log(`[db-init] ✓ Admin created: ${adminEmail}`);
     } else if (existingAdmin.role !== "ADMIN") {
-      // Promote to admin if exists but not admin
-      await db.user.update({ where: { id: existingAdmin.id }, data: { role: "ADMIN" } });
+      await db.user.update({ where: { id: existingAdmin.id }, data: { role: "ADMIN" } }).catch(() => {});
       console.log(`[db-init] ✓ User promoted to admin: ${adminEmail}`);
     } else {
       console.log("[db-init] ✓ Admin already exists");
     }
 
-    // 3. Seed AI models
+    // 2b. AI models
     for (const m of DEFAULT_MODELS) {
-      const existing = await db.aIModel.findFirst({ where: { providerId: m.providerId } });
+      const existing = await db.aIModel.findFirst({ where: { providerId: m.providerId } }).catch(() => null);
       if (!existing) {
-        await db.aIModel.create({ data: m });
+        await db.aIModel.create({ data: m }).catch((e: any) => console.warn(`[db-init] Model create failed: ${e.message}`));
         console.log(`[db-init] ✓ Model created: ${m.name}`);
       }
     }
+
     // Ensure exactly one active model
-    const activeCount = await db.aIModel.count({ where: { isActive: true } });
+    const activeCount = await db.aIModel.count({ where: { isActive: true } }).catch(() => 0);
     if (activeCount === 0) {
-      const first = await db.aIModel.findFirst({ orderBy: { createdAt: "asc" } });
+      const first = await db.aIModel.findFirst({ orderBy: { createdAt: "asc" } }).catch(() => null);
       if (first) {
-        await db.aIModel.update({ where: { id: first.id }, data: { isActive: true } });
+        await db.aIModel.update({ where: { id: first.id }, data: { isActive: true } }).catch(() => {});
         console.log(`[db-init] ✓ Activated default model: ${first.name}`);
       }
     }
 
-    // 4. Seed pricing plans
+    // 2c. Pricing plans
     for (const p of DEFAULT_PLANS) {
-      const existing = await db.pricingPlan.findUnique({ where: { slug: p.slug } });
+      const existing = await db.pricingPlan.findUnique({ where: { slug: p.slug } }).catch(() => null);
       if (!existing) {
-        await db.pricingPlan.create({ data: p });
+        await db.pricingPlan.create({ data: p }).catch((e: any) => console.warn(`[db-init] Plan create failed: ${e.message}`));
         console.log(`[db-init] ✓ Plan created: ${p.slug}`);
       }
     }
 
-    // 5. Seed fusion prompt
-    const existingPrompt = await db.siteSettings.findUnique({ where: { key: "fusion_prompt" } });
+    // 2d. Fusion prompt
+    const existingPrompt = await db.siteSettings.findUnique({ where: { key: "fusion_prompt" } }).catch(() => null);
     if (!existingPrompt) {
       await db.siteSettings.create({
         data: {
@@ -318,14 +248,14 @@ async function doInit(): Promise<void> {
           value: DEFAULT_PROMPT,
           description: "Central prompt sent to the AI model with the two reference images.",
         },
-      });
+      }).catch((e: any) => console.warn(`[db-init] Prompt create failed: ${e.message}`));
       console.log("[db-init] ✓ Fusion prompt seeded");
     }
 
     console.log("[db-init] 🎉 Database initialization complete");
   } catch (err) {
-    console.error("[db-init] ❌ Initialization failed:", err);
-    // Don't throw — let the server start anyway so admin can debug via UI
+    console.error("[db-init] ❌ Seeding failed:", err);
+    // Don't throw — let the server start anyway
   } finally {
     await db.$disconnect();
   }

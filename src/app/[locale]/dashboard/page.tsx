@@ -24,12 +24,20 @@ export default async function Page({
   }
 
   const userId = session.user.id;
-  const generations = await db.generation.findMany({
-    where: { userId },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-    include: { model: true },
-  });
+
+  // Resilient DB query — if the DB isn't ready (cold start), show empty state
+  let generations: any[] = [];
+  try {
+    generations = await db.generation.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      include: { model: true },
+    });
+  } catch (err) {
+    console.error("[dashboard] DB error, showing empty state:", err);
+    generations = [];
+  }
 
   const total = generations.length;
   const success = generations.filter((g) => g.status === "succeeded").length;
@@ -37,6 +45,10 @@ export default async function Page({
   const last30 = generations.filter(
     (g) => Date.now() - g.createdAt.getTime() < 30 * 24 * 60 * 60 * 1000
   ).length;
+
+  // Split the noGenerations string manually (t.rich doesn't work in RSC)
+  const noGenParts = t("noGenerations").split("{link}");
+  const startFirst = t("startFirst");
 
   return (
     <div className="container mx-auto px-4 py-12 md:py-20">
@@ -59,14 +71,12 @@ export default async function Page({
           <Card className="glass-card">
             <CardContent className="p-8 text-center">
               <p className="text-sm text-muted-foreground">
-                {t.rich("noGenerations", {
-                  link: (chunks) => (
-                    <Link href={`/${locale}/fusion`} className="text-primary hover:underline inline-flex items-center">
-                      <Sparkles className="mr-1 h-3 w-3" />
-                      {chunks}
-                    </Link>
-                  ),
-                })}
+                {noGenParts[0]}
+                <Link href={`/${locale}/fusion`} className="text-primary hover:underline inline-flex items-center">
+                  <Sparkles className="mr-1 h-3 w-3" />
+                  {startFirst}
+                </Link>
+                {noGenParts[1]}
               </p>
             </CardContent>
           </Card>
