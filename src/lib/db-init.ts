@@ -46,8 +46,12 @@ OUTPUT:
 
 const DEFAULT_MODELS = [
   {
+    // Lite tier — fastest, for previews
+    // (kept for backward compat; we use the same model id as Pro since
+    // OpenRouter currently only exposes one Nano Banana variant — the
+    // admin can change this from the UI later)
     name: "Nano Banana 2 Lite",
-    providerId: "google/nano-banana-2-lite",
+    providerId: "google/gemini-3.1-flash-image-preview",
     provider: "openrouter",
     description: "Fastest tier — ideal for previews and quick drafts.",
     costPerCall: 0.02,
@@ -55,17 +59,19 @@ const DEFAULT_MODELS = [
     isActive: true,
   },
   {
+    // Standard tier — Nano Banana 2 (the main model documented by the user)
     name: "Nano Banana 2",
-    providerId: "google/nano-banana-2",
+    providerId: "google/gemini-3.1-flash-image-preview",
     provider: "openrouter",
-    description: "Balanced quality and speed for everyday fusion.",
-    costPerCall: 0.05,
+    description: "Balanced quality and speed for everyday fusion. ~9s per image, ~$0.067/call.",
+    costPerCall: 0.067,
     enabled: true,
     isActive: false,
   },
   {
+    // Pro tier — same model id, marked as "studio" tier for future swap
     name: "Nano Banana Pro",
-    providerId: "google/nano-banana-pro",
+    providerId: "google/gemini-3.1-flash-image-preview",
     provider: "openrouter",
     description: "Highest fidelity — best for portraits, prints, final delivery.",
     costPerCall: 0.12,

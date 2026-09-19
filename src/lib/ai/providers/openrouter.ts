@@ -4,12 +4,18 @@ import { HttpError } from "@/lib/server";
 /**
  * OpenRouterProvider — implements AIProvider against the OpenRouter API.
  *
- * Docs: https://openrouter.ai/docs
- * Auth: Bearer token from process.env.OPENROUTER_API_KEY (server-side only).
+ * Uses the /chat/completions endpoint (NOT /images/generations) because we
+ * need to send TWO source images along with the prompt. The /images/
+ * endpoint ignores source images.
  *
- * The model id is supplied by the caller — never hardcoded here. The admin
- * can edit providerModelId in the DB to point to a different OpenRouter
- * model without touching code.
+ * The generated image is returned in `message.images[0].image_url.url`
+ * (NOT in `message.content`).
+ *
+ * The model id is supplied by the caller — read from the DB. The admin
+ * can change it from the UI without touching code.
+ *
+ * Auth: Bearer token from process.env.OPENROUTER_API_KEY (server-side only).
+ * Docs: https://openrouter.ai/docs
  */
 export class OpenRouterProvider implements AIProvider {
   readonly name = "openrouter";
@@ -24,10 +30,25 @@ export class OpenRouterProvider implements AIProvider {
     return "https://openrouter.ai/api/v1";
   }
 
+  /**
+   * Returns the site URL used in the HTTP-Referer and X-Site-Url headers.
+   * OpenRouter shows this in their dashboard rankings — and some models
+   * use it for referrer-based filtering.
+   */
+  private get siteUrl(): string {
+    return process.env.OPENROUTER_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || "https://allcombiner.com";
+  }
+
+  private get appName(): string {
+    return process.env.OPENROUTER_APP_NAME || "AllCombiner";
+  }
+
   private headers(json = true): Record<string, string> {
     const h: Record<string, string> = {
       Authorization: `Bearer ${this.apiKey}`,
-      "X-App-Name": process.env.OPENROUTER_APP_NAME ?? "AllCombiner",
+      "HTTP-Referer": this.siteUrl,
+      "X-Title": this.appName,
+      "X-App-Name": this.appName,
     };
     if (process.env.OPENROUTER_SITE_URL) {
       h["X-Site-Url"] = process.env.OPENROUTER_SITE_URL;
@@ -37,20 +58,15 @@ export class OpenRouterProvider implements AIProvider {
   }
 
   /**
-   * Calls OpenRouter's chat completions endpoint with two image inputs and
-   * asks for a single image output. We request `modalities: ["image","text"]`
-   * so the model can return an image.
+   * Calls OpenRouter's /chat/completions endpoint with two image inputs.
    *
-   * Note: OpenRouter routes the request to the underlying provider model.
-   * Different models expose image output differently (some return a URL in
-   * the text, some return an `images` array). We handle both.
+   * CRITICAL: the response image is in `choices[0].message.images[0].image_url.url`
+   * (NOT in `message.content`). This is specific to image-generating models
+   * like google/gemini-3.1-flash-image-preview (Nano Banana 2).
    */
   async fuse(input: FuseInput): Promise<FuseResult> {
     const body = {
       model: input.providerModelId,
-      modalities: ["image", "text"],
-      // We instruct the model in the user message itself; no separate system
-      // message because some image models ignore system messages.
       messages: [
         {
           role: "user",
@@ -67,15 +83,16 @@ export class OpenRouterProvider implements AIProvider {
       method: "POST",
       headers: this.headers(),
       body: JSON.stringify(body),
-      // OpenRouter can take 30-60s on first call to a model (cold start).
-      // We give 120s ceiling.
+      // The fusion typically takes ~9s, but we give a 120s ceiling for
+      // safety (cold starts, large images, network jitter).
       signal: AbortSignal.timeout(120_000),
     });
 
     if (!res.ok) {
+      const errText = await safeText(res);
       throw new HttpError(
         502,
-        `OpenRouter error ${res.status}: ${await safeText(res)}`
+        `OpenRouter error ${res.status}: ${errText.slice(0, 300)}`
       );
     }
 
@@ -85,32 +102,36 @@ export class OpenRouterProvider implements AIProvider {
       throw new HttpError(502, "OpenRouter returned no choices");
     }
 
-    // Case 1: model returned an image directly (modalities: image)
-    const imgPart = choice?.message?.images?.[0]?.image_url?.url
-      ?? choice?.message?.image_url?.url;
-    if (imgPart) {
+    // CRITICAL: extract the image from `message.images[0].image_url.url`
+    // (NOT from `message.content` — which is null for image outputs)
+    const imageUrl: string | undefined =
+      choice?.message?.images?.[0]?.image_url?.url ??
+      choice?.message?.image_url?.url;
+
+    if (imageUrl) {
       return {
-        imageUrl: imgPart,
+        imageUrl,
         estimatedCost: typeof data?.usage?.cost === "number" ? data.usage.cost : undefined,
         raw: data,
       };
     }
 
-    // Case 2: model returned a URL inside the text content
+    // Fallback 1: some models embed the image URL in text content
     const text: string | undefined = choice?.message?.content;
     if (text) {
       const match = text.match(/https?:\/\/[^\s)'"<>]+\.(?:png|jpg|jpeg|webp)/i);
       if (match) {
         return { imageUrl: match[0], estimatedCost: data?.usage?.cost, raw: data };
       }
-      // Case 3: model returned a base64 data URL inside text
+      // Fallback 2: data URL embedded in text
       const dataUrl = text.match(/data:image\/[a-z]+;base64,[A-Za-z0-9+/=_]+/i);
       if (dataUrl) {
         return { imageUrl: dataUrl[0], estimatedCost: data?.usage?.cost, raw: data };
       }
     }
 
-    // Could not extract an image
+    // No image found — log the raw response for debugging (server-side only)
+    console.error("[openrouter] No image in response. Raw:", JSON.stringify(data).slice(0, 500));
     throw new HttpError(502, "OpenRouter did not return a usable image");
   }
 

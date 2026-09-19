@@ -22,6 +22,56 @@ interface UploadedImage {
   name: string;
 }
 
+/**
+ * Converts an image File to a PNG data URL via Canvas, with optional
+ * downscaling. This is required by the Nano Banana 2 model on OpenRouter:
+ *   - PNG format only (not JPG/WEBP)
+ *   - Max 1024×1024 to keep latency low and avoid payload limits
+ *
+ * Returns null if the file cannot be loaded as an image.
+ */
+async function convertToPngDataUrl(file: File, maxDim = 1024): Promise<string | null> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const src = reader.result as string;
+      const img = new window.Image();
+      img.onload = () => {
+        let { width, height } = img;
+        // Downscale if larger than maxDim on either side
+        if (width > maxDim || height > maxDim) {
+          const ratio = Math.min(maxDim / width, maxDim / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(null);
+          return;
+        }
+        // White background to avoid transparency issues with JPEG sources
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        // Force PNG output
+        try {
+          const pngDataUrl = canvas.toDataURL("image/png");
+          resolve(pngDataUrl);
+        } catch {
+          resolve(null);
+        }
+      };
+      img.onerror = () => resolve(null);
+      img.src = src;
+    };
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
+}
+
 const STEPS = ["progressUploading", "progressAnalyzing", "progressFusing", "progressRendering"] as const;
 
 export function FusionPage() {
@@ -67,13 +117,19 @@ export function FusionPage() {
         toast.error(t("errorFileType"));
         return;
       }
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-      const img: UploadedImage = { file, dataUrl, name: file.name };
+
+      // Convert to PNG via Canvas, downscale to max 1024px on the longest side.
+      // This is required by the Nano Banana 2 model (see /docs/api doc):
+      //   - PNG format (not JPG/WEBP)
+      //   - Max 1024×1024 to keep latency low (~9s) and avoid payload limits
+      //   - Data URL base64 sent to backend as image_url
+      const pngDataUrl = await convertToPngDataUrl(file, 1024);
+      if (!pngDataUrl) {
+        toast.error(t("errorFileType"));
+        return;
+      }
+
+      const img: UploadedImage = { file, dataUrl: pngDataUrl, name: file.name };
       if (slot === "A") setImageA(img);
       else setImageB(img);
     },
