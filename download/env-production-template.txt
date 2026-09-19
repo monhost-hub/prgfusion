@@ -1,0 +1,35 @@
+# ============================================================================
+# AllCombiner — PRODUCTION .env
+# ============================================================================
+# 👉 Remplace toutes les valeurs entre <...> par tes vraies valeurs
+# 👉 N'ajoute PAS d'espaces autour du =
+# 👉 Pour AUTH_SECRET, génère 32 caractères aléatoires (voir plus bas)
+# ============================================================================
+
+# --- App ---
+NEXT_PUBLIC_APP_URL=https://TON-DOMAINE.hostinger.app
+DATABASE_URL=file:./prod.db
+AUTH_SECRET=REMPLACE_PAR_32_CARACTERES_ALEATOIRES
+AUTH_TRUST_HOST=true
+NODE_ENV=production
+PORT=3000
+HOST=0.0.0.0
+
+# --- Admin (mot de passe à changer à la première connexion) ---
+ADMIN_EMAIL=admin@allcombiner.com
+ADMIN_PASSWORD=RemplaceParUnVraiMotDePasse!2024
+ADMIN_NAME=Admin
+
+# --- OpenRouter (https://openrouter.ai/keys) ---
+OPENROUTER_API_KEY=sk-or-v1-REMPLACE_PAR_TA_VRAIE_CLE
+OPENROUTER_SITE_URL=https://TON-DOMAINE.hostinger.app
+OPENROUTER_APP_NAME=AllCombiner
+
+# --- Rate limiting (laisser les valeurs par défaut) ---
+RATE_LIMIT_FUSION_PER_HOUR=10
+RATE_LIMIT_CONTACT_PER_HOUR=5
+RATE_LIMIT_AUTH_PER_HOUR=20
+
+# --- Upload limits (laisser les valeurs par défaut) ---
+MAX_UPLOAD_SIZE_MB=10
+MAX_UPLOAD_DIMENSION=4096
