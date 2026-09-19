@@ -5,12 +5,57 @@ import { Check, Sparkles } from "lucide-react";
 import { db } from "@/lib/db";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { useTranslatedPathname } from "@/i18n/routing";
 import type { Locale } from "@/i18n/routing";
+
+// Fallback plans used if the DB is not ready yet (e.g. cold start before
+// instrumentation.ts has finished initializing the schema).
+const FALLBACK_PLANS = [
+  {
+    id: "fallback-free",
+    slug: "free",
+    nameJson: JSON.stringify({ en: "Free", fr: "Gratuit", es: "Gratis" }),
+    description: "Try AllCombiner with a few credits. No credit card required.",
+    priceMonthly: 0,
+    priceYearly: 0,
+    credits: 3,
+    featured: false,
+  },
+  {
+    id: "fallback-starter",
+    slug: "starter",
+    nameJson: JSON.stringify({ en: "Starter", fr: "Découverte", es: "Inicio" }),
+    description: "For personal projects and occasional fusions.",
+    priceMonthly: 9,
+    priceYearly: 90,
+    credits: 50,
+    featured: false,
+  },
+  {
+    id: "fallback-pro",
+    slug: "pro",
+    nameJson: JSON.stringify({ en: "Pro", fr: "Pro", es: "Pro" }),
+    description: "For creators who fuse regularly. Most popular.",
+    priceMonthly: 29,
+    priceYearly: 290,
+    credits: 250,
+    featured: true,
+  },
+  {
+    id: "fallback-business",
+    slug: "business",
+    nameJson: JSON.stringify({ en: "Business", fr: "Entreprise", es: "Empresa" }),
+    description: "For teams and agencies that need volume.",
+    priceMonthly: 99,
+    priceYearly: 990,
+    credits: 1000,
+    featured: false,
+  },
+];
 
 /**
  * Pricing page — fully DB-driven. Reads all enabled PricingPlan rows
- * sorted by sortOrder and renders them. No price is hardcoded here.
+ * sorted by sortOrder and renders them. Falls back to hardcoded defaults
+ * if the DB is not ready yet (cold start).
  */
 export default async function Page({
   params,
@@ -21,10 +66,28 @@ export default async function Page({
   setRequestLocale(locale);
   const t = await getTranslations({ locale, namespace: "Pricing" });
 
-  const plans = await db.pricingPlan.findMany({
-    where: { enabled: true },
-    orderBy: { sortOrder: "asc" },
-  });
+  let plans: typeof FALLBACK_PLANS = FALLBACK_PLANS;
+  try {
+    const dbPlans = await db.pricingPlan.findMany({
+      where: { enabled: true },
+      orderBy: { sortOrder: "asc" },
+    });
+    if (dbPlans.length > 0) {
+      plans = dbPlans.map((p) => ({
+        id: p.id,
+        slug: p.slug,
+        nameJson: p.nameJson,
+        description: p.description,
+        priceMonthly: p.priceMonthly,
+        priceYearly: p.priceYearly,
+        credits: p.credits,
+        featured: p.featured,
+      }));
+    }
+  } catch (err) {
+    // DB not ready yet (cold start) — use fallback plans
+    console.error("[pricing] DB error, using fallback plans:", err);
+  }
 
   function nameOf(plan: { nameJson: string }): string {
     try {
