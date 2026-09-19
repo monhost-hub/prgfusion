@@ -63,5 +63,14 @@ db/
 /public/uploads/*
 !/public/uploads/.gitkeep
 
+# runtime
+.run/
+logs/
+data/
+
+# deploy artifacts
+*.log
+
+
 # os
 Thumbs.db

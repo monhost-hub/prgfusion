@@ -1,0 +1,44 @@
+# ============================================================================
+# AllCombiner — Hostinger deployment configuration
+# ============================================================================
+# This file is recognized by Hostinger's Git deployment system.
+# Docs: https://support.hostinger.com/en/articles/4458961-how-to-deploy-
+#        a-git-repository-to-your-hosting-account
+# ============================================================================
+
+# Hostinger runs this automatically after every git pull.
+# Edit the commands below to match your hosting plan (shared vs VPS).
+
+# --- For shared hosting (hPanel → Git → Auto Deploy) ---
+# Hostinger's shared hosting uses Phusion Passenger for Node.js.
+# The .htaccess file in /public_html/allcombiner routes requests to the
+# Next.js standalone server.
+
+# --- For VPS / Cloud hosting ---
+# Use deploy.sh + PM2 (recommended) or docker-compose.yml (advanced).
+
+# Build commands executed by Hostinger's CI on every push:
+build:
+  commands:
+    - npm ci
+    - npm run build
+
+# Files/dirs to copy to the deployment target:
+deploy:
+  source:
+    - .next/standalone/
+    - .next/static/
+    - public/
+    - prisma/
+    - package.json
+    - .env
+
+# Restart command (after deploy):
+restart:
+  command: "pm2 restart allcombiner || pm2 start ecosystem.config.cjs"
+
+# Health check URL (Hostinger pings this after deploy):
+healthcheck:
+  url: "/"
+  expected_status: 200
+  timeout: 30

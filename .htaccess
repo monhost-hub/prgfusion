@@ -1,0 +1,71 @@
+# ============================================================================
+# AllCombiner — .htaccess for Hostinger shared hosting
+# ============================================================================
+# Place this file in /public_html/allcombiner/.htaccess
+# It routes all requests to the Next.js standalone server via Passenger.
+# ============================================================================
+
+# Enable URL rewriting
+RewriteEngine On
+
+# Force HTTPS
+RewriteCond %{HTTPS} off
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# Redirect www to non-www (or vice-versa — choose one)
+# Uncomment to redirect www → non-www
+# RewriteCond %{HTTP_HOST} ^www\.(.+)$ [NC]
+# RewriteRule ^ https://%1%{REQUEST_URI} [L,R=301]
+
+# Security headers
+<IfModule mod_headers.c>
+  Header set Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" env=HTTPS
+  Header set X-Content-Type-Options "nosniff"
+  Header set X-Frame-Options "SAMEORIGIN"
+  Header set Referrer-Policy "strict-origin-when-cross-origin"
+  Header set Permissions-Policy "camera=(), microphone=(), geolocation=()"
+</IfModule>
+
+# Max upload size (must match MAX_UPLOAD_SIZE_MB)
+# 15MB to allow base64 encoding overhead on a 10MB image
+<IfModule mod_php.c>
+  php_value upload_max_filesize 15M
+  php_value post_max_size 15M
+</IfModule>
+LimitRequestBody 15728640
+
+# Cache static assets aggressively
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType text/css "access plus 1 year"
+  ExpiresByType application/javascript "access plus 1 year"
+  ExpiresByType image/png "access plus 1 month"
+  ExpiresByType image/jpg "access plus 1 month"
+  ExpiresByType image/jpeg "access plus 1 month"
+  ExpiresByType image/webp "access plus 1 month"
+  ExpiresByType image/svg+xml "access plus 1 month"
+  ExpiresByType text/html "access plus 0 seconds"
+</IfModule>
+
+# Gzip compression
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/plain text/css application/javascript application/json image/svg+xml
+</IfModule>
+
+# Next.js standalone server runs via Passenger (Hostinger Node.js selector)
+# The Node.js app is configured in hPanel → Advanced → Node.js
+# Passenger automatically routes requests to server.js
+
+# Block access to sensitive files
+<FilesMatch "(^\.|\.(env|sql|md|log|sh)$)">
+  Require all denied
+</FilesMatch>
+
+# Block dotfiles
+<Files ~ "^\.">
+  Require all denied
+</Files>
+
+# Custom error pages
+ErrorDocument 404 /404.html
+ErrorDocument 500 /500.html
