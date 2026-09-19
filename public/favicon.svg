@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="50%" stop-color="#14b8a6"/>
+      <stop offset="100%" stop-color="#f59e0b"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#g)"/>
+  <!-- Sparkle icon -->
+  <path d="M32 14 L36 26 L48 30 L36 34 L32 46 L28 34 L16 30 L28 26 Z" fill="white"/>
+  <circle cx="46" cy="18" r="3" fill="white" opacity="0.8"/>
+  <circle cx="18" cy="46" r="2.5" fill="white" opacity="0.6"/>
+</svg>

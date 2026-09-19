@@ -1,0 +1,127 @@
+import { setRequestLocale, getTranslations } from "next-intl/server";
+import type { Metadata } from "next";
+import Link from "next/link";
+import { Check, Sparkles } from "lucide-react";
+import { db } from "@/lib/db";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { useTranslatedPathname } from "@/i18n/routing";
+import type { Locale } from "@/i18n/routing";
+
+/**
+ * Pricing page — fully DB-driven. Reads all enabled PricingPlan rows
+ * sorted by sortOrder and renders them. No price is hardcoded here.
+ */
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale } = await params;
+  setRequestLocale(locale);
+  const t = await getTranslations({ locale, namespace: "Pricing" });
+
+  const plans = await db.pricingPlan.findMany({
+    where: { enabled: true },
+    orderBy: { sortOrder: "asc" },
+  });
+
+  function nameOf(plan: { nameJson: string }): string {
+    try {
+      const obj = JSON.parse(plan.nameJson) as Record<Locale, string>;
+      return obj[locale as Locale] ?? obj.en ?? Object.values(obj)[0] ?? "";
+    } catch {
+      return plan.nameJson;
+    }
+  }
+
+  return (
+    <div className="container mx-auto px-4 py-12 md:py-20">
+      <div className="max-w-2xl mx-auto text-center mb-12">
+        <h1 className="text-3xl md:text-5xl font-bold tracking-tight">{t("pageTitle")}</h1>
+        <p className="mt-3 text-muted-foreground">{t("pageSubtitle")}</p>
+      </div>
+
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 max-w-6xl mx-auto">
+        {plans.map((plan) => {
+          const featured = plan.featured;
+          return (
+            <Card
+              key={plan.id}
+              className={
+                featured
+                  ? "glass-card border-primary/40 shadow-glow relative"
+                  : "glass-card relative"
+              }
+            >
+              {featured && (
+                <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-brand-gradient text-white text-xs px-3 py-1 font-medium inline-flex items-center gap-1">
+                  <Sparkles className="h-3 w-3" />
+                  {t("mostPopular")}
+                </span>
+              )}
+              <CardContent className="p-6 flex flex-col h-full">
+                <h3 className="font-semibold text-lg">{nameOf(plan)}</h3>
+                <p className="mt-1 text-xs text-muted-foreground min-h-[2.5rem]">
+                  {plan.description}
+                </p>
+
+                <div className="mt-4 flex items-baseline gap-1">
+                  <span className="text-3xl font-bold">
+                    ${plan.priceMonthly.toFixed(2)}
+                  </span>
+                  <span className="text-sm text-muted-foreground">{t("perMonth")}</span>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  ${plan.priceYearly.toFixed(2)} {t("perYear")}
+                </div>
+
+                <div className="mt-4 inline-flex items-center gap-1.5 self-start rounded-full bg-primary/10 text-primary px-2.5 py-1 text-xs font-medium">
+                  <Check className="h-3 w-3" />
+                  {plan.credits} {t("creditsPerMonth")}
+                </div>
+
+                <div className="mt-6 pt-6 border-t border-border/40">
+                  <Button
+                    asChild
+                    size="sm"
+                    className={
+                      featured
+                        ? "w-full bg-brand-gradient text-white hover:opacity-90"
+                        : "w-full"
+                    }
+                    variant={featured ? "default" : "outline"}
+                  >
+                    <Link
+                      href={localePath(locale, plan.slug === "free" ? "/signup" : "/contact")}
+                    >
+                      {plan.slug === "free" ? t("ctaFree") : t("cta", { plan: nameOf(plan) })}
+                    </Link>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      <div className="mt-12 text-center text-xs text-muted-foreground max-w-2xl mx-auto">
+        {t("guarantee")}
+      </div>
+    </div>
+  );
+}
+
+function localePath(locale: string, path: string): string {
+  return `/${locale}${path}`;
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}): Promise<Metadata> {
+  const { locale } = await params;
+  const t = await getTranslations({ locale, namespace: "Pricing" });
+  return { title: t("pageTitle"), description: t("pageSubtitle") };
+}

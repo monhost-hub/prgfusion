@@ -1,0 +1,196 @@
+// AllCombiner Prisma schema
+// NOTE: This sandbox uses SQLite for fast local testing. The schema is portable to PostgreSQL:
+//   1. Change `provider = "sqlite"` to `provider = "postgresql"`
+//   2. Update DATABASE_URL in .env to a postgres:// URL
+//   3. Run `bun run db:push`
+// All column types below are SQLite-compatible but map cleanly to Postgres types.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// AUTH (NextAuth.js v4 - credentials provider, JWT sessions)
+// ============================================================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  // Hashed with bcrypt. Never store plaintext.
+  passwordHash  String
+  // "USER" | "ADMIN"
+  role          String    @default("USER")
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts      Account[]
+  sessions      Session[]
+  generations   Generation[]
+
+  @@index([role])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ============================================================================
+// AI MODELS (configurable from admin — never hardcoded in fusion logic)
+// ============================================================================
+
+model AIModel {
+  id          String   @id @default(cuid())
+  // Display name shown in admin & UI, e.g. "Nano Banana 2 Lite"
+  name        String
+  // OpenRouter model id, e.g. "google/nano-banana-2-lite"
+  providerId  String
+  // "openrouter" (extensible to other providers)
+  provider    String   @default("openrouter")
+  // Short marketing description
+  description String?
+  // Approximate cost per generation in USD (informational)
+  costPerCall Float    @default(0)
+  // Whether the model is selectable. Only one model can be `isActive=true` at a time.
+  enabled     Boolean  @default(true)
+  isActive    Boolean  @default(false)
+  // Optional capability flags
+  supportsImages Boolean @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  generations Generation[]
+
+  @@index([provider])
+  @@index([isActive])
+}
+
+// ============================================================================
+// GENERATIONS (audit log of every fusion run)
+// ============================================================================
+
+model Generation {
+  id          String   @id @default(cuid())
+  userId      String
+  modelId     String
+
+  // "pending" | "running" | "succeeded" | "failed"
+  status      String   @default("pending")
+  // The full prompt sent to the model (for audit / reproducibility)
+  prompt      String
+  // Path under /public/uploads or data URL of input A
+  inputAPath  String
+  inputBPath  String
+  // Output image URL or data URL
+  outputPath  String?
+  // ms
+  durationMs  Int?
+  // sanitized error message (no stack traces)
+  error       String?
+  // estimated cost in USD
+  estimatedCost Float  @default(0)
+  createdAt   DateTime @default(now())
+
+  user  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  model AIModel  @relation(fields: [modelId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// SITE SETTINGS (key-value store for prompt, OpenRouter status, etc.)
+// ============================================================================
+
+model SiteSettings {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String
+  // Optional description shown in admin
+  description String?
+  updatedAt DateTime @updatedAt
+}
+
+// ============================================================================
+// PRICING PLANS (DB-driven — admin can edit, no price hardcoded in frontend)
+// ============================================================================
+
+model PricingPlan {
+  id          String   @id @default(cuid())
+  // Internal slug, e.g. "free", "pro", "business"
+  slug        String   @unique
+  // i18n: name is a JSON object like {"en":"Pro","fr":"Pro","es":"Pro"}
+  nameJson    String
+  description String
+  priceMonthly Float
+  priceYearly  Float
+  currency    String   @default("USD")
+  credits     Int
+  // Highlighted in the pricing table
+  featured    Boolean  @default(false)
+  enabled     Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ============================================================================
+// CONTACT MESSAGES (from /contact)
+// ============================================================================
+
+model ContactMessage {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  subject   String?
+  message   String
+  // "new" | "read" | "archived"
+  status    String   @default("new")
+  createdAt DateTime @default(now())
+
+  @@index([status])
+  @@index([createdAt])
+}
