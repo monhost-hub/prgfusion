@@ -53,6 +53,11 @@ server.log
 prisma/dev.db
 prisma/*.db
 db/*.db
+db/
+
+# zscripts runtime
+.zscripts/dev.pid
+.zscripts/dev.log
 
 # uploads (runtime)
 /public/uploads/*
