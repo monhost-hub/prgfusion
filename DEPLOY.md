@@ -44,7 +44,7 @@ git --version
 
 ```bash
 cd /var/www
-git clone https://github.com/Akaprod/allcombiner.git
+git clone https://github.com/monhost-hub/prgfusion.git
 cd allcombiner
 ```
 
@@ -143,7 +143,7 @@ Then `chmod +x` it. Now every push to GitHub triggers a redeploy if you set up a
 1. hPanel → **Advanced → Git**
 2. Click **"Create new deployment"**
 3. Authorize Hostinger on GitHub
-4. Select repo `Akaprod/allcombiner`, branch `main`
+4. Select repo `monhost-hub/prgfusion`, branch `main`
 5. Destination: `public_html/allcombiner`
 6. Click **"Deploy"**
 
@@ -202,7 +202,7 @@ sudo usermod -aG docker $USER
 ### 2. Clone and configure
 
 ```bash
-git clone https://github.com/Akaprod/allcombiner.git
+git clone https://github.com/monhost-hub/prgfusion.git
 cd allcombiner
 cp .env.production.example .env
 nano .env    # fill in real values
@@ -239,7 +239,7 @@ Use the same Nginx config from [Section A](#a-hostinger-vps--cloud-with-pm2), po
 
 ### 1. Import repo
 
-Go to https://vercel.com/new → import `Akaprod/allcombiner`.
+Go to https://vercel.com/new → import `monhost-hub/prgfusion`.
 
 ### 2. Configure environment variables
 

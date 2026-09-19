@@ -120,7 +120,7 @@ Prerequisites:
 
 ```bash
 # Clone the repository (when public)
-git clone https://github.com/Akaprod/allcombiner.git
+git clone https://github.com/monhost-hub/prgfusion.git
 cd allcombiner
 
 # Install dependencies
