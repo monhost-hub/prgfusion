@@ -3,12 +3,16 @@ import { apiRoute, requireAdmin, HttpError } from "@/lib/server";
 import { db } from "@/lib/db";
 
 /**
- * GET /api/admin/pricing — list all plans
+ * GET /api/admin/pricing — list all ENABLED plans
+ *   (legacy/duplicate plans are filtered out so the admin doesn't see them)
  * POST /api/admin/pricing — create a new plan
  */
 export const GET = apiRoute(async () => {
   await requireAdmin();
-  const plans = await db.pricingPlan.findMany({ orderBy: { sortOrder: "asc" } });
+  const plans = await db.pricingPlan.findMany({
+    where: { enabled: true },
+    orderBy: { sortOrder: "asc" },
+  });
   return NextResponse.json({ plans });
 });
 

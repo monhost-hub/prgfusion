@@ -3,12 +3,14 @@ import { apiRoute, requireAdmin, HttpError } from "@/lib/server";
 import { db } from "@/lib/db";
 
 /**
- * GET /api/admin/payments/plans — list all plans with Whop config
+ * GET /api/admin/payments/plans — list all ENABLED plans with Whop config
+ *   (legacy/duplicate plans are filtered out)
  * POST /api/admin/payments/plans — create a new plan
  */
 export const GET = apiRoute(async () => {
   await requireAdmin();
   const plans = await db.pricingPlan.findMany({
+    where: { enabled: true },
     orderBy: { sortOrder: "asc" },
     include: { _count: { select: { whopPayments: true, planChanges: true } } },
   });

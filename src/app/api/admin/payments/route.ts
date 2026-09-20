@@ -8,7 +8,8 @@ import { isWhopConfigured } from "@/lib/whop";
  *
  * Returns:
  *   - whopConfigured: boolean (whether WHOP_COMPANY_API_KEY + WHOP_WEBHOOK_SECRET are set)
- *   - plans: all pricing plans with their Whop config
+ *   - plans: all ENABLED pricing plans with their Whop config
+ *     (legacy/duplicate plans are filtered out so the admin doesn't see them)
  *   - recentPayments: last 50 Whop payments
  *   - recentEvents: last 50 Whop events
  */
@@ -17,6 +18,7 @@ export const GET = apiRoute(async () => {
 
   const [plans, recentPayments, recentEvents, totalRevenue] = await Promise.all([
     db.pricingPlan.findMany({
+      where: { enabled: true },
       orderBy: { sortOrder: "asc" },
       include: { _count: { select: { whopPayments: true } } },
     }).catch(() => []),

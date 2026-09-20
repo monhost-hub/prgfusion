@@ -150,9 +150,8 @@ const DEFAULT_PLANS = [
     billingPeriod: "monthly",
   },
 
-  // === RECHARGES (recharge_*) — achat unique, sans engagement ===
-  // Pas d'intégration Whop pour les recharges (à venir). Les boutons restent
-  // des liens vers /contact pour l'instant.
+  // === RECHARGES (recharge_*) — achat unique via Whop, sans engagement ===
+  // Les 5 recharges ont maintenant leur Plan ID Whop + Checkout URL directe.
   {
     slug: "recharge_mini",
     nameJson: JSON.stringify({ en: "Mini", fr: "Mini", es: "Mini" }),
@@ -164,8 +163,8 @@ const DEFAULT_PLANS = [
     featured: 0,
     enabled: 1,
     sortOrder: 100,
-    whopPlanId: null,
-    whopCheckoutUrl: null,
+    whopPlanId: "plan_p5X53jTXOIYqp",
+    whopCheckoutUrl: "https://whop.com/checkout/plan_p5X53jTXOIYqp",
     billingPeriod: "one_time",
   },
   {
@@ -179,8 +178,8 @@ const DEFAULT_PLANS = [
     featured: 0,
     enabled: 1,
     sortOrder: 101,
-    whopPlanId: null,
-    whopCheckoutUrl: null,
+    whopPlanId: "plan_K0XdfjjXukUN3",
+    whopCheckoutUrl: "https://whop.com/checkout/plan_K0XdfjjXukUN3",
     billingPeriod: "one_time",
   },
   {
@@ -194,8 +193,8 @@ const DEFAULT_PLANS = [
     featured: 1,
     enabled: 1,
     sortOrder: 102,
-    whopPlanId: null,
-    whopCheckoutUrl: null,
+    whopPlanId: "plan_1v1cg4NMkpLfZ",
+    whopCheckoutUrl: "https://whop.com/checkout/plan_1v1cg4NMkpLfZ",
     billingPeriod: "one_time",
   },
   {
@@ -209,8 +208,8 @@ const DEFAULT_PLANS = [
     featured: 0,
     enabled: 1,
     sortOrder: 103,
-    whopPlanId: null,
-    whopCheckoutUrl: null,
+    whopPlanId: "plan_ABI1GWRWr9DLV",
+    whopCheckoutUrl: "https://whop.com/checkout/plan_ABI1GWRWr9DLV",
     billingPeriod: "one_time",
   },
   {
@@ -224,8 +223,8 @@ const DEFAULT_PLANS = [
     featured: 0,
     enabled: 1,
     sortOrder: 104,
-    whopPlanId: null,
-    whopCheckoutUrl: null,
+    whopPlanId: "plan_6Ga9zlu7SFTdd",
+    whopCheckoutUrl: "https://whop.com/checkout/plan_6Ga9zlu7SFTdd",
     billingPeriod: "one_time",
   },
 ];
@@ -566,23 +565,49 @@ async function doInit(): Promise<void> {
         }).catch((e: any) => console.warn(`[db-init] Plan create failed: ${e.message}`));
         console.log(`[db-init] ✓ Plan created: ${p.slug}${p.whopPlanId ? ` (whop: ${p.whopPlanId})` : ""}`);
       } else {
-        // Update existing plan: ensure whopPlanId + currency are set if missing
+        // Update existing plan: sync ALL fields from DEFAULT_PLANS so the
+        // admin can change them later via the UI, but the seed always
+        // reflects the latest known configuration.
         const needsUpdate =
-          (p.whopPlanId && !existing.whopPlanId) ||
+          (p.whopPlanId !== undefined && p.whopPlanId !== existing.whopPlanId) ||
+          (p.whopCheckoutUrl !== undefined && p.whopCheckoutUrl !== existing.whopCheckoutUrl) ||
           (p.currency && existing.currency !== p.currency) ||
-          (p.billingPeriod && !existing.billingPeriod);
+          (p.billingPeriod && existing.billingPeriod !== p.billingPeriod) ||
+          existing.priceMonthly !== p.priceMonthly ||
+          existing.credits !== p.credits ||
+          existing.description !== p.description;
         if (needsUpdate) {
           await db.pricingPlan.update({
             where: { id: existing.id },
             data: {
-              ...(p.whopPlanId && !existing.whopPlanId ? { whopPlanId: p.whopPlanId } : {}),
+              ...(p.whopPlanId !== undefined ? { whopPlanId: p.whopPlanId } : {}),
+              ...(p.whopCheckoutUrl !== undefined ? { whopCheckoutUrl: p.whopCheckoutUrl } : {}),
               ...(p.currency ? { currency: p.currency } : {}),
-              ...(p.billingPeriod && !existing.billingPeriod ? { billingPeriod: p.billingPeriod } : {}),
+              ...(p.billingPeriod ? { billingPeriod: p.billingPeriod } : {}),
+              priceMonthly: p.priceMonthly,
+              credits: p.credits,
+              description: p.description,
               updatedAt: new Date(),
             },
           }).catch(() => {});
-          console.log(`[db-init] ✓ Plan updated: ${p.slug} (whop config)`);
+          console.log(`[db-init] ✓ Plan updated: ${p.slug} (synced config from seed)`);
         }
+      }
+    }
+
+    // === Cleanup: disable legacy plans (without sub_/recharge_ prefix) ===
+    // These are leftover from the original 4-plan grid (free/starter/pro/business).
+    // They were replaced by the new slugs (sub_free/sub_starter/etc.).
+    // We disable them so they don't appear in the pricing page or admin list.
+    const legacySlugs = ["free", "starter", "pro", "business"];
+    for (const slug of legacySlugs) {
+      const legacy = await db.pricingPlan.findUnique({ where: { slug } }).catch(() => null);
+      if (legacy && legacy.enabled) {
+        await db.pricingPlan.update({
+          where: { id: legacy.id },
+          data: { enabled: false, updatedAt: new Date() },
+        }).catch(() => {});
+        console.log(`[db-init] ✓ Disabled legacy plan: ${slug} (replaced by sub_${slug})`);
       }
     }
 
