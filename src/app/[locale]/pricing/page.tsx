@@ -31,11 +31,11 @@ const FALLBACK_PLANS: Plan[] = [
   { id: "f3", slug: "sub_creator", nameJson: JSON.stringify({ en: "Creator", fr: "Créateur", es: "Creador" }), description: "Abonnement mensuel · 100 crédits/mois.", priceMonthly: 24.99, priceYearly: 24.99, currency: "EUR", credits: 100, featured: true, sortOrder: 2, whopPlanId: "plan_ljP4MuzoKR235", whopCheckoutUrl: null, billingPeriod: "monthly" },
   { id: "f4", slug: "sub_pro", nameJson: JSON.stringify({ en: "Pro", fr: "Pro", es: "Pro" }), description: "Abonnement mensuel · 250 crédits/mois.", priceMonthly: 49.99, priceYearly: 49.99, currency: "EUR", credits: 250, featured: false, sortOrder: 3, whopPlanId: "plan_iZlkOxrRs9OHY", whopCheckoutUrl: null, billingPeriod: "monthly" },
   { id: "f5", slug: "sub_business", nameJson: JSON.stringify({ en: "Business", fr: "Entreprise", es: "Empresa" }), description: "Abonnement mensuel · 500 crédits/mois.", priceMonthly: 99.99, priceYearly: 99.99, currency: "EUR", credits: 500, featured: false, sortOrder: 4, whopPlanId: "plan_Gk5R2N2OViuiK", whopCheckoutUrl: null, billingPeriod: "monthly" },
-  { id: "f6", slug: "recharge_mini", nameJson: JSON.stringify({ en: "Mini", fr: "Mini", es: "Mini" }), description: "10 crédits — tester sans engagement.", priceMonthly: 4.99, priceYearly: 4.99, currency: "EUR", credits: 10, featured: false, sortOrder: 100, whopPlanId: null, whopCheckoutUrl: null, billingPeriod: "one_time" },
-  { id: "f7", slug: "recharge_small", nameJson: JSON.stringify({ en: "Small", fr: "Petit", es: "Pequeño" }), description: "30 crédits — petit lot.", priceMonthly: 9.99, priceYearly: 9.99, currency: "EUR", credits: 30, featured: false, sortOrder: 101, whopPlanId: null, whopCheckoutUrl: null, billingPeriod: "one_time" },
-  { id: "f8", slug: "recharge_medium", nameJson: JSON.stringify({ en: "Medium", fr: "Moyen", es: "Mediano" }), description: "75 crédits — meilleur compromis.", priceMonthly: 19.99, priceYearly: 19.99, currency: "EUR", credits: 75, featured: true, sortOrder: 102, whopPlanId: null, whopCheckoutUrl: null, billingPeriod: "one_time" },
-  { id: "f9", slug: "recharge_large", nameJson: JSON.stringify({ en: "Large", fr: "Grand", es: "Grande" }), description: "200 crédits — gros volumes.", priceMonthly: 39.99, priceYearly: 39.99, currency: "EUR", credits: 200, featured: false, sortOrder: 103, whopPlanId: null, whopCheckoutUrl: null, billingPeriod: "one_time" },
-  { id: "f10", slug: "recharge_xl", nameJson: JSON.stringify({ en: "XL", fr: "XL", es: "XL" }), description: "500 crédits — le plus économique.", priceMonthly: 79.99, priceYearly: 79.99, currency: "EUR", credits: 500, featured: false, sortOrder: 104, whopPlanId: null, whopCheckoutUrl: null, billingPeriod: "one_time" },
+  { id: "f6", slug: "recharge_mini", nameJson: JSON.stringify({ en: "Mini", fr: "Mini", es: "Mini" }), description: "10 crédits — tester sans engagement.", priceMonthly: 4.99, priceYearly: 4.99, currency: "EUR", credits: 10, featured: false, sortOrder: 100, whopPlanId: "plan_p5X53jTXOIYqp", whopCheckoutUrl: "https://whop.com/checkout/plan_p5X53jTXOIYqp", billingPeriod: "one_time" },
+  { id: "f7", slug: "recharge_small", nameJson: JSON.stringify({ en: "Small", fr: "Petit", es: "Pequeño" }), description: "30 crédits — petit lot.", priceMonthly: 9.99, priceYearly: 9.99, currency: "EUR", credits: 30, featured: false, sortOrder: 101, whopPlanId: "plan_K0XdfjjXukUN3", whopCheckoutUrl: "https://whop.com/checkout/plan_K0XdfjjXukUN3", billingPeriod: "one_time" },
+  { id: "f8", slug: "recharge_medium", nameJson: JSON.stringify({ en: "Medium", fr: "Moyen", es: "Mediano" }), description: "75 crédits — meilleur compromis.", priceMonthly: 19.99, priceYearly: 19.99, currency: "EUR", credits: 75, featured: true, sortOrder: 102, whopPlanId: "plan_1v1cg4NMkpLfZ", whopCheckoutUrl: "https://whop.com/checkout/plan_1v1cg4NMkpLfZ", billingPeriod: "one_time" },
+  { id: "f9", slug: "recharge_large", nameJson: JSON.stringify({ en: "Large", fr: "Grand", es: "Grande" }), description: "200 crédits — gros volumes.", priceMonthly: 39.99, priceYearly: 39.99, currency: "EUR", credits: 200, featured: false, sortOrder: 103, whopPlanId: "plan_ABI1GWRWr9DLV", whopCheckoutUrl: "https://whop.com/checkout/plan_ABI1GWRWr9DLV", billingPeriod: "one_time" },
+  { id: "f10", slug: "recharge_xl", nameJson: JSON.stringify({ en: "XL", fr: "XL", es: "XL" }), description: "500 crédits — le plus économique.", priceMonthly: 79.99, priceYearly: 79.99, currency: "EUR", credits: 500, featured: false, sortOrder: 104, whopPlanId: "plan_6Ga9zlu7SFTdd", whopCheckoutUrl: "https://whop.com/checkout/plan_6Ga9zlu7SFTdd", billingPeriod: "one_time" },
 ];
 
 /**
@@ -238,9 +238,10 @@ function PlanCard({
               planSlug={plan.slug}
               label={cta}
               featured={featured}
+              whopCheckoutUrl={plan.whopCheckoutUrl}
             />
           ) : (
-            // Plan sans Whop (recharge) → contact
+            // Plan sans Whop → contact
             <Button
               asChild
               size="sm"

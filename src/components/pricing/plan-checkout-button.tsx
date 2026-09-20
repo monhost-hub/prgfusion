@@ -12,14 +12,17 @@ import { useTranslatedPathname } from "@/i18n/routing";
  *
  * Behavior:
  *  1. If the user is not logged in → redirect to /login
- *  2. If logged in → POST /api/checkout/whop with { planSlug }
+ *  2. If logged in:
+ *     a) If plan.whopCheckoutUrl is set → redirect DIRECTLY to that URL
+ *        (faster, no server round-trip, works even if /api/checkout is down)
+ *     b) Else → POST /api/checkout/whop with { planSlug }
+ *        The server creates a Whop Checkout Session and returns a checkoutUrl
  *  3. The server (not the client) determines:
  *     - which Whop plan id to use (from DB)
  *     - the price (from DB)
  *     - the credits (from DB)
  *     - the user id (from session)
- *  4. The server returns a checkoutUrl → we redirect the browser to it
- *  5. After payment, Whop fires a webhook → /api/webhooks/whop grants credits
+ *  4. After payment, Whop fires a webhook → /api/webhooks/whop grants credits
  *
  * IMPORTANT: We NEVER grant credits here. The "success" page only shows
  * "Payment is being processed" — credits are granted ONLY after the
@@ -29,10 +32,13 @@ export function PlanCheckoutButton({
   planSlug,
   label,
   featured = false,
+  whopCheckoutUrl,
 }: {
   planSlug: string;
   label: string;
   featured?: boolean;
+  /** Optional direct Whop checkout URL — if set, we skip the API call */
+  whopCheckoutUrl?: string | null;
 }) {
   const { data: session, status } = useSession();
   const [loading, setLoading] = useState(false);
@@ -47,8 +53,15 @@ export function PlanCheckoutButton({
     }
 
     setLoading(true);
+
+    // 2a. Direct redirect to Whop checkout URL (faster path)
+    if (whopCheckoutUrl && /^https:\/\/(www\.)?whop\.com\//i.test(whopCheckoutUrl)) {
+      window.location.href = whopCheckoutUrl;
+      return;
+    }
+
+    // 2b. Otherwise, create a checkout session via the API
     try {
-      // 2. Call our server-side checkout endpoint
       const res = await fetch("/api/checkout/whop", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
