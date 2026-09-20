@@ -54,9 +54,10 @@ UPDATE `PricingPlan` SET
   `currency` = 'EUR'
 WHERE `slug` = 'recharge_xl';
 
--- === 3. Synchroniser les 4 abonnements (au cas où) ===
+-- === 3. Synchroniser les 4 abonnements avec Checkout URL directe ===
 UPDATE `PricingPlan` SET
   `whopPlanId` = 'plan_CfZL537w2pKOn',
+  `whopCheckoutUrl` = 'https://whop.com/checkout/plan_CfZL537w2pKOn',
   `billingPeriod` = 'monthly',
   `currency` = 'EUR',
   `priceMonthly` = 9.99,
@@ -65,6 +66,7 @@ WHERE `slug` = 'sub_starter';
 
 UPDATE `PricingPlan` SET
   `whopPlanId` = 'plan_ljP4MuzoKR235',
+  `whopCheckoutUrl` = 'https://whop.com/checkout/plan_ljP4MuzoKR235',
   `billingPeriod` = 'monthly',
   `currency` = 'EUR',
   `priceMonthly` = 24.99,
@@ -73,6 +75,7 @@ WHERE `slug` = 'sub_creator';
 
 UPDATE `PricingPlan` SET
   `whopPlanId` = 'plan_iZlkOxrRs9OHY',
+  `whopCheckoutUrl` = 'https://whop.com/checkout/plan_iZlkOxrRs9OHY',
   `billingPeriod` = 'monthly',
   `currency` = 'EUR',
   `priceMonthly` = 49.99,
@@ -81,6 +84,7 @@ WHERE `slug` = 'sub_pro';
 
 UPDATE `PricingPlan` SET
   `whopPlanId` = 'plan_Gk5R2N2OViuiK',
+  `whopCheckoutUrl` = 'https://whop.com/checkout/plan_Gk5R2N2OViuiK',
   `billingPeriod` = 'monthly',
   `currency` = 'EUR',
   `priceMonthly` = 99.99,

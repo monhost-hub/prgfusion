@@ -100,8 +100,8 @@ export function PlanCheckoutButton({
       size="sm"
       className={
         featured
-          ? "w-full bg-brand-gradient text-white hover:opacity-90"
-          : "w-full"
+          ? "w-full bg-brand-gradient text-white hover:opacity-90 shadow-glow"
+          : "w-full bg-primary/15 text-primary border border-primary/40 hover:bg-primary/25 hover:border-primary/60 font-semibold"
       }
       variant={featured ? "default" : "outline"}
     >

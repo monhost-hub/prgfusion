@@ -101,7 +101,7 @@ const DEFAULT_PLANS = [
     enabled: 1,
     sortOrder: 1,
     whopPlanId: process.env.WHOP_STARTER_PLAN_ID || "plan_CfZL537w2pKOn",
-    whopCheckoutUrl: null, // generated on the fly by /api/checkout/whop
+    whopCheckoutUrl: `https://whop.com/checkout/${process.env.WHOP_STARTER_PLAN_ID || "plan_CfZL537w2pKOn"}`,
     billingPeriod: "monthly",
   },
   {
@@ -116,7 +116,7 @@ const DEFAULT_PLANS = [
     enabled: 1,
     sortOrder: 2,
     whopPlanId: process.env.WHOP_CREATOR_PLAN_ID || "plan_ljP4MuzoKR235",
-    whopCheckoutUrl: null,
+    whopCheckoutUrl: `https://whop.com/checkout/${process.env.WHOP_CREATOR_PLAN_ID || "plan_ljP4MuzoKR235"}`,
     billingPeriod: "monthly",
   },
   {
@@ -131,7 +131,7 @@ const DEFAULT_PLANS = [
     enabled: 1,
     sortOrder: 3,
     whopPlanId: process.env.WHOP_PRO_PLAN_ID || "plan_iZlkOxrRs9OHY",
-    whopCheckoutUrl: null,
+    whopCheckoutUrl: `https://whop.com/checkout/${process.env.WHOP_PRO_PLAN_ID || "plan_iZlkOxrRs9OHY"}`,
     billingPeriod: "monthly",
   },
   {
@@ -146,7 +146,7 @@ const DEFAULT_PLANS = [
     enabled: 1,
     sortOrder: 4,
     whopPlanId: process.env.WHOP_BUSINESS_PLAN_ID || "plan_Gk5R2N2OViuiK",
-    whopCheckoutUrl: null,
+    whopCheckoutUrl: `https://whop.com/checkout/${process.env.WHOP_BUSINESS_PLAN_ID || "plan_Gk5R2N2OViuiK"}`,
     billingPeriod: "monthly",
   },
 
