@@ -182,24 +182,30 @@ function PlanCard({
     <Card
       className={
         featured
-          ? "!bg-primary/15 !border-2 !border-primary/60 !shadow-glow relative backdrop-blur-md"
-          : "!bg-card !border !border-border/80 !shadow-lg hover:!border-primary/40 hover:!shadow-glow transition-all duration-200 relative backdrop-blur-sm"
+          ? "!bg-primary/10 !border-2 !border-primary/50 !shadow-glow relative backdrop-blur-md"
+          : "!bg-card !border !border-border/60 !shadow-md hover:!border-primary/30 transition-all duration-200 relative"
       }
     >
       {featured && (
-        <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-brand-gradient text-white text-xs px-3 py-1 font-medium inline-flex items-center gap-1 z-10">
+        <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-brand-gradient text-white text-xs px-3 py-1 font-semibold inline-flex items-center gap-1 z-10 shadow-md">
           <Sparkles className="h-3 w-3" />
           Populaire
         </span>
       )}
       <CardContent className="p-5 flex flex-col h-full">
-        <h3 className="font-semibold text-base">{name}</h3>
-        <p className="mt-1 text-xs text-muted-foreground min-h-[2.5rem] leading-tight">
+        {/* === Titre du pack — plus grand, plus visible === */}
+        <h3 className={`font-bold text-lg tracking-tight ${featured ? "text-primary" : "text-foreground"}`}>
+          {name}
+        </h3>
+
+        {/* === Description courte — reste discrète === */}
+        <p className="mt-1.5 text-xs text-muted-foreground min-h-[2.5rem] leading-tight">
           {plan.description}
         </p>
 
+        {/* === Prix — élément le plus visible === */}
         <div className="mt-3 flex items-baseline gap-1">
-          <span className="text-2xl font-bold">
+          <span className="text-3xl font-extrabold text-foreground">
             €{plan.priceMonthly.toFixed(2)}
           </span>
           {isRecharge ? (
@@ -211,17 +217,20 @@ function PlanCard({
           )}
         </div>
 
-        <div className="mt-2 inline-flex items-center gap-1.5 self-start rounded-full bg-primary/15 text-primary px-2.5 py-1 text-xs font-medium border border-primary/20">
+        {/* === Nombre de crédits === */}
+        <div className="mt-2 inline-flex items-center gap-1.5 self-start rounded-full bg-primary/10 text-primary px-2.5 py-1 text-xs font-medium border border-primary/20">
           <Check className="h-3 w-3" />
           {plan.credits} crédits
         </div>
 
+        {/* === Prix par crédit === */}
         {!isFree && (
           <p className="mt-1 text-[10px] text-muted-foreground">
             €{pricePerCredit.toFixed(3)} / crédit
           </p>
         )}
 
+        {/* === Séparateur === */}
         <div className="mt-4 pt-4 border-t border-border/40">
           {isFree ? (
             <Button
