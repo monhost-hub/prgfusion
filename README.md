@@ -317,6 +317,127 @@ Three locales are supported out of the box:
 
 ---
 
+## Payments — Whop integration
+
+AllCombiner uses [Whop](https://whop.com) for subscription payments.
+
+### Architecture
+
+```
+User clicks "Subscribe" on /pricing
+        ↓
+POST /api/checkout/whop (auth required)
+        ↓
+Server reads plan from DB → creates Whop Checkout Session
+with metadata.userId = current user id
+        ↓
+Browser redirects to Whop checkout URL
+        ↓
+User pays on Whop
+        ↓
+Whop fires webhook → POST /api/webhooks/whop
+        ↓
+Server verifies signature (timing-safe HMAC-SHA256)
+        ↓
+Server looks up PricingPlan by whopPlanId (from Whop payload, NOT from client)
+        ↓
+Server looks up User by metadata.userId (set during checkout, NOT from client)
+        ↓
+ATOMIC TRANSACTION:
+  1. INSERT WhopEvent (UNIQUE whopEventId → idempotence)
+  2. INSERT WhopPayment (UNIQUE whopPaymentId → idempotence)
+  3. UPDATE User.credits += plan.credits
+  4. INSERT CreditTransaction (audit log)
+        ↓
+User's credit balance updated. Done.
+```
+
+### Critical security points
+
+- **NEVER trust the client** for price, credits, or plan id — the server reads everything from the DB
+- **NEVER grant credits on success URL redirect** — only the authenticated webhook can grant credits
+- **Idempotence** — `WhopEvent.whopEventId` has a UNIQUE constraint, so the same webhook fired twice grants credits only once
+- **Signature verification** — every webhook is verified with `WHOP_WEBHOOK_SECRET` using timing-safe comparison
+- **Atomic transactions** — credit grant + audit log happen in a single `db.$transaction`
+- **Refunds on failure** — if a fusion fails after debiting credits, they are refunded automatically
+
+### Environment variables
+
+```env
+WHOP_COMPANY_API_KEY=xxx           # server-side only
+WHOP_WEBHOOK_SECRET=xxx            # server-side only
+WHOP_STARTER_PLAN_ID=plan_xxx      # used by seed (admin can change later)
+WHOP_CREATOR_PLAN_ID=plan_xxx
+WHOP_PRO_PLAN_ID=plan_xxx
+WHOP_BUSINESS_PLAN_ID=plan_xxx
+```
+
+### Plan IDs (official)
+
+| Plan | Whop Plan ID | Price | Credits |
+|---|---|---|---|
+| Starter | `plan_CfZL537w2pKOn` | €9.99/mo | 30 |
+| Creator | `plan_ljP4MuzoKR235` | €24.99/mo | 100 |
+| Pro | `plan_iZlkOxrRs9OHY` | €49.99/mo | 250 |
+| Business | `plan_Gk5R2N2OViuiK` | €99.99/mo | 500 |
+
+### Webhook endpoint
+
+Configure in Whop dashboard → Developers → Webhooks:
+
+```
+POST https://allcombiner.com/api/webhooks/whop
+```
+
+Events handled:
+- `payment.succeeded` → grant credits
+- `payment.failed` → log only (no credits)
+- `membership.activated` → grant credits
+- `membership.deactivated` → log only
+- `membership.renewed` → grant credits (monthly renewal)
+
+### Admin — managing offers without redeploying
+
+Go to `/admin/payments` to:
+- Edit price, credits, currency of any plan
+- Change the Whop Plan ID for any plan
+- Enable/disable a plan
+- Set featured plan
+- View all payments and webhook events
+- View modification history (who changed what, when)
+
+All changes take effect immediately on `/pricing` — no redeploy needed.
+
+### Sandbox → Production
+
+1. In Whop dashboard, switch from Sandbox to Live mode
+2. Get the **live** `WHOP_COMPANY_API_KEY` and `WHOP_WEBHOOK_SECRET`
+3. Update env vars on Hostinger (hPanel → Git → Environment variables)
+4. Update the webhook URL in Whop dashboard (if different)
+5. Redeploy (or wait for next push)
+6. Test with a real card
+
+### Tests
+
+Run the Whop integration tests:
+
+```bash
+bun run scripts/test-whop.ts
+```
+
+Tests cover:
+1. Starter → 30 credits
+2. Creator → 100 credits
+3. Pro → 250 credits
+4. Business → 500 credits
+5. `payment.failed` → no credits
+6. Same webhook twice → only one credit grant (idempotence)
+7. Invalid signature → webhook rejected
+8. User A cannot receive payment of B (no userId spoofing)
+9. Unknown planId → no credits
+
+---
+
 ## Tests
 
 The project includes an end-to-end test script that verifies:

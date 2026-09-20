@@ -72,73 +72,101 @@ const DEFAULT_MODELS = [
 
 const DEFAULT_PLANS = [
   // === ABONNEMENTS (sub_*) ===
+  // Les 4 plans Whop sont associés à leur Plan ID via env vars.
+  // L'admin peut les modifier depuis /admin/payments sans redéployer.
   {
     slug: "sub_free",
     nameJson: JSON.stringify({ en: "Free", fr: "Gratuit", es: "Gratis" }),
-    description: "Try AllCombiner with a few credits. No credit card required.",
+    description: "3 crédits offerts à l'inscription. Aucune carte requise.",
     priceMonthly: 0,
     priceYearly: 0,
+    currency: "EUR",
     credits: 3,
     featured: 0,
     enabled: 1,
     sortOrder: 0,
+    whopPlanId: null,
+    whopCheckoutUrl: null,
+    billingPeriod: null,
   },
   {
     slug: "sub_starter",
     nameJson: JSON.stringify({ en: "Starter", fr: "Découverte", es: "Inicio" }),
-    description: "1 mois · 30 crédits — pour les curieux qui veulent tester.",
+    description: "Abonnement mensuel · 30 crédits/mois — pour les curieux.",
     priceMonthly: 9.99,
     priceYearly: 9.99,
+    currency: "EUR",
     credits: 30,
     featured: 0,
     enabled: 1,
     sortOrder: 1,
+    whopPlanId: process.env.WHOP_STARTER_PLAN_ID || "plan_CfZL537w2pKOn",
+    whopCheckoutUrl: null, // generated on the fly by /api/checkout/whop
+    billingPeriod: "monthly",
   },
   {
     slug: "sub_creator",
     nameJson: JSON.stringify({ en: "Creator", fr: "Créateur", es: "Creador" }),
-    description: "3 mois · 100 crédits — le meilleur rapport qualité/prix.",
+    description: "Abonnement mensuel · 100 crédits/mois — le meilleur rapport qualité/prix.",
     priceMonthly: 24.99,
     priceYearly: 24.99,
+    currency: "EUR",
     credits: 100,
     featured: 1,
     enabled: 1,
     sortOrder: 2,
+    whopPlanId: process.env.WHOP_CREATOR_PLAN_ID || "plan_ljP4MuzoKR235",
+    whopCheckoutUrl: null,
+    billingPeriod: "monthly",
   },
   {
     slug: "sub_pro",
     nameJson: JSON.stringify({ en: "Pro", fr: "Pro", es: "Pro" }),
-    description: "6 mois · 250 crédits — pour les créateurs réguliers.",
+    description: "Abonnement mensuel · 250 crédits/mois — pour les créateurs réguliers.",
     priceMonthly: 49.99,
     priceYearly: 49.99,
+    currency: "EUR",
     credits: 250,
     featured: 0,
     enabled: 1,
     sortOrder: 3,
+    whopPlanId: process.env.WHOP_PRO_PLAN_ID || "plan_iZlkOxrRs9OHY",
+    whopCheckoutUrl: null,
+    billingPeriod: "monthly",
   },
   {
     slug: "sub_business",
     nameJson: JSON.stringify({ en: "Business", fr: "Entreprise", es: "Empresa" }),
-    description: "12 mois · 500 crédits — pour les équipes et agences.",
+    description: "Abonnement mensuel · 500 crédits/mois — pour les équipes et agences.",
     priceMonthly: 99.99,
     priceYearly: 99.99,
+    currency: "EUR",
     credits: 500,
     featured: 0,
     enabled: 1,
     sortOrder: 4,
+    whopPlanId: process.env.WHOP_BUSINESS_PLAN_ID || "plan_Gk5R2N2OViuiK",
+    whopCheckoutUrl: null,
+    billingPeriod: "monthly",
   },
 
   // === RECHARGES (recharge_*) — achat unique, sans engagement ===
+  // Pas d'intégration Whop pour les recharges (à venir). Les boutons restent
+  // des liens vers /contact pour l'instant.
   {
     slug: "recharge_mini",
     nameJson: JSON.stringify({ en: "Mini", fr: "Mini", es: "Mini" }),
     description: "10 crédits — pour tester sans engagement.",
     priceMonthly: 4.99,
     priceYearly: 4.99,
+    currency: "EUR",
     credits: 10,
     featured: 0,
     enabled: 1,
     sortOrder: 100,
+    whopPlanId: null,
+    whopCheckoutUrl: null,
+    billingPeriod: "one_time",
   },
   {
     slug: "recharge_small",
@@ -146,10 +174,14 @@ const DEFAULT_PLANS = [
     description: "30 crédits — petit lot à l'unité.",
     priceMonthly: 9.99,
     priceYearly: 9.99,
+    currency: "EUR",
     credits: 30,
     featured: 0,
     enabled: 1,
     sortOrder: 101,
+    whopPlanId: null,
+    whopCheckoutUrl: null,
+    billingPeriod: "one_time",
   },
   {
     slug: "recharge_medium",
@@ -157,10 +189,14 @@ const DEFAULT_PLANS = [
     description: "75 crédits — le meilleur compromis pour les rechargeurs.",
     priceMonthly: 19.99,
     priceYearly: 19.99,
+    currency: "EUR",
     credits: 75,
     featured: 1,
     enabled: 1,
     sortOrder: 102,
+    whopPlanId: null,
+    whopCheckoutUrl: null,
+    billingPeriod: "one_time",
   },
   {
     slug: "recharge_large",
@@ -168,10 +204,14 @@ const DEFAULT_PLANS = [
     description: "200 crédits — pour les gros volumes ponctuels.",
     priceMonthly: 39.99,
     priceYearly: 39.99,
+    currency: "EUR",
     credits: 200,
     featured: 0,
     enabled: 1,
     sortOrder: 103,
+    whopPlanId: null,
+    whopCheckoutUrl: null,
+    billingPeriod: "one_time",
   },
   {
     slug: "recharge_xl",
@@ -179,10 +219,14 @@ const DEFAULT_PLANS = [
     description: "500 crédits — le plus économique au crédit près.",
     priceMonthly: 79.99,
     priceYearly: 79.99,
+    currency: "EUR",
     credits: 500,
     featured: 0,
     enabled: 1,
     sortOrder: 104,
+    whopPlanId: null,
+    whopCheckoutUrl: null,
+    billingPeriod: "one_time",
   },
 ];
 
@@ -325,16 +369,26 @@ const CREATE_TABLES_SQL = [
     \`description\` LONGTEXT NOT NULL,
     \`priceMonthly\` DOUBLE NOT NULL,
     \`priceYearly\` DOUBLE NOT NULL,
-    \`currency\` VARCHAR(191) NOT NULL DEFAULT 'USD',
+    \`currency\` VARCHAR(191) NOT NULL DEFAULT 'EUR',
     \`credits\` INT NOT NULL,
     \`featured\` BOOLEAN NOT NULL DEFAULT false,
     \`enabled\` BOOLEAN NOT NULL DEFAULT true,
     \`sortOrder\` INT NOT NULL DEFAULT 0,
+    \`whopPlanId\` VARCHAR(191) NULL,
+    \`whopCheckoutUrl\` LONGTEXT NULL,
+    \`billingPeriod\` VARCHAR(191) NULL,
     \`createdAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     \`updatedAt\` DATETIME(3) NOT NULL,
     UNIQUE INDEX \`PricingPlan_slug_key\`(\`slug\`),
     PRIMARY KEY (\`id\`)
   ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+  // Add Whop columns to existing PricingPlan (idempotent)
+  `ALTER TABLE \`PricingPlan\` ADD COLUMN IF NOT EXISTS \`whopPlanId\` VARCHAR(191) NULL`,
+  `ALTER TABLE \`PricingPlan\` ADD COLUMN IF NOT EXISTS \`whopCheckoutUrl\` LONGTEXT NULL`,
+  `ALTER TABLE \`PricingPlan\` ADD COLUMN IF NOT EXISTS \`billingPeriod\` VARCHAR(191) NULL`,
+  // Migrate existing rows from USD to EUR
+  `UPDATE \`PricingPlan\` SET \`currency\` = 'EUR' WHERE \`currency\` = 'USD' OR \`currency\` IS NULL`,
 
   `CREATE TABLE IF NOT EXISTS \`ContactMessage\` (
     \`id\` VARCHAR(191) NOT NULL,
@@ -347,6 +401,64 @@ const CREATE_TABLES_SQL = [
     INDEX \`ContactMessage_status_idx\`(\`status\`),
     INDEX \`ContactMessage_createdAt_idx\`(\`createdAt\`),
     PRIMARY KEY (\`id\`)
+  ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+  // === Whop tables ===
+  `CREATE TABLE IF NOT EXISTS \`WhopEvent\` (
+    \`id\` VARCHAR(191) NOT NULL,
+    \`whopEventId\` VARCHAR(191) NOT NULL,
+    \`eventType\` VARCHAR(191) NOT NULL,
+    \`whopPaymentId\` VARCHAR(191) NULL,
+    \`whopMembershipId\` VARCHAR(191) NULL,
+    \`userId\` VARCHAR(191) NULL,
+    \`planSlug\` VARCHAR(191) NULL,
+    \`status\` VARCHAR(191) NOT NULL,
+    \`creditsGranted\` INT NOT NULL DEFAULT 0,
+    \`rawPayload\` LONGTEXT NOT NULL,
+    \`error\` TEXT NULL,
+    \`processedAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    \`createdAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    UNIQUE INDEX \`WhopEvent_whopEventId_key\`(\`whopEventId\`),
+    INDEX \`WhopEvent_userId_idx\`(\`userId\`),
+    INDEX \`WhopEvent_eventType_idx\`(\`eventType\`),
+    INDEX \`WhopEvent_createdAt_idx\`(\`createdAt\`),
+    PRIMARY KEY (\`id\`)
+  ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+  `CREATE TABLE IF NOT EXISTS \`WhopPayment\` (
+    \`id\` VARCHAR(191) NOT NULL,
+    \`whopPaymentId\` VARCHAR(191) NOT NULL,
+    \`userId\` VARCHAR(191) NOT NULL,
+    \`planId\` VARCHAR(191) NOT NULL,
+    \`whopEventId\` VARCHAR(191) NULL,
+    \`amount\` DOUBLE NOT NULL,
+    \`currency\` VARCHAR(191) NOT NULL DEFAULT 'EUR',
+    \`credits\` INT NOT NULL,
+    \`status\` VARCHAR(191) NOT NULL,
+    \`whopMembershipId\` VARCHAR(191) NULL,
+    \`createdAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    \`updatedAt\` DATETIME(3) NOT NULL,
+    UNIQUE INDEX \`WhopPayment_whopPaymentId_key\`(\`whopPaymentId\`),
+    INDEX \`WhopPayment_userId_idx\`(\`userId\`),
+    INDEX \`WhopPayment_status_idx\`(\`status\`),
+    INDEX \`WhopPayment_createdAt_idx\`(\`createdAt\`),
+    PRIMARY KEY (\`id\`),
+    CONSTRAINT \`WhopPayment_planId_fkey\` FOREIGN KEY (\`planId\`) REFERENCES \`PricingPlan\`(\`id\`)
+  ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+  `CREATE TABLE IF NOT EXISTS \`PricingPlanChange\` (
+    \`id\` VARCHAR(191) NOT NULL,
+    \`planId\` VARCHAR(191) NOT NULL,
+    \`adminId\` VARCHAR(191) NOT NULL,
+    \`field\` VARCHAR(191) NOT NULL,
+    \`oldValue\` TEXT NULL,
+    \`newValue\` TEXT NULL,
+    \`createdAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    INDEX \`PricingPlanChange_planId_idx\`(\`planId\`),
+    INDEX \`PricingPlanChange_adminId_idx\`(\`adminId\`),
+    INDEX \`PricingPlanChange_createdAt_idx\`(\`createdAt\`),
+    PRIMARY KEY (\`id\`),
+    CONSTRAINT \`PricingPlanChange_planId_fkey\` FOREIGN KEY (\`planId\`) REFERENCES \`PricingPlan\`(\`id\`) ON DELETE CASCADE
   ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
 ];
 
@@ -441,15 +553,36 @@ async function doInit(): Promise<void> {
             description: p.description,
             priceMonthly: p.priceMonthly,
             priceYearly: p.priceYearly,
-            currency: "USD",
+            currency: p.currency || "EUR",
             credits: p.credits,
             featured: Boolean(p.featured),
             enabled: Boolean(p.enabled),
             sortOrder: p.sortOrder,
+            whopPlanId: p.whopPlanId ?? null,
+            whopCheckoutUrl: p.whopCheckoutUrl ?? null,
+            billingPeriod: p.billingPeriod ?? null,
             updatedAt: new Date(),
           },
         }).catch((e: any) => console.warn(`[db-init] Plan create failed: ${e.message}`));
-        console.log(`[db-init] ✓ Plan created: ${p.slug}`);
+        console.log(`[db-init] ✓ Plan created: ${p.slug}${p.whopPlanId ? ` (whop: ${p.whopPlanId})` : ""}`);
+      } else {
+        // Update existing plan: ensure whopPlanId + currency are set if missing
+        const needsUpdate =
+          (p.whopPlanId && !existing.whopPlanId) ||
+          (p.currency && existing.currency !== p.currency) ||
+          (p.billingPeriod && !existing.billingPeriod);
+        if (needsUpdate) {
+          await db.pricingPlan.update({
+            where: { id: existing.id },
+            data: {
+              ...(p.whopPlanId && !existing.whopPlanId ? { whopPlanId: p.whopPlanId } : {}),
+              ...(p.currency ? { currency: p.currency } : {}),
+              ...(p.billingPeriod && !existing.billingPeriod ? { billingPeriod: p.billingPeriod } : {}),
+              updatedAt: new Date(),
+            },
+          }).catch(() => {});
+          console.log(`[db-init] ✓ Plan updated: ${p.slug} (whop config)`);
+        }
       }
     }
 

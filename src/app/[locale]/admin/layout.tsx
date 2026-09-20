@@ -11,6 +11,7 @@ import {
   Plug,
   Settings2,
   DollarSign,
+  CreditCard,
   Sliders,
   ArrowLeft,
 } from "lucide-react";
@@ -47,6 +48,7 @@ export default async function AdminLayout({
     { href: "/openrouter", icon: Plug, key: "navOpenrouter" },
     { href: "/fusion-settings", icon: Sliders, key: "navFusionSettings" },
     { href: "/pricing", icon: DollarSign, key: "navPricing" },
+    { href: "/payments", icon: CreditCard, key: "Paiements" },
     { href: "/site-settings", icon: Settings2, key: "navSiteSettings" },
   ] as const;
 

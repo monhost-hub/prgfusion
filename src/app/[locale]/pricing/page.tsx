@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import type { Locale } from "@/i18n/routing";
+import { PlanCheckoutButton } from "@/components/pricing/plan-checkout-button";
 
 interface Plan {
   id: string;
@@ -14,23 +15,27 @@ interface Plan {
   description: string;
   priceMonthly: number;
   priceYearly: number;
+  currency: string;
   credits: number;
   featured: boolean;
   sortOrder: number;
+  whopPlanId: string | null;
+  whopCheckoutUrl: string | null;
+  billingPeriod: string | null;
 }
 
 // Fallback plans used if the DB is not ready yet (cold start).
 const FALLBACK_PLANS: Plan[] = [
-  { id: "f1", slug: "sub_free", nameJson: JSON.stringify({ en: "Free", fr: "Gratuit", es: "Gratis" }), description: "3 crédits — pour découvrir.", priceMonthly: 0, priceYearly: 0, credits: 3, featured: false, sortOrder: 0 },
-  { id: "f2", slug: "sub_starter", nameJson: JSON.stringify({ en: "Starter", fr: "Découverte", es: "Inicio" }), description: "1 mois · 30 crédits — pour les curieux.", priceMonthly: 9.99, priceYearly: 9.99, credits: 30, featured: false, sortOrder: 1 },
-  { id: "f3", slug: "sub_creator", nameJson: JSON.stringify({ en: "Creator", fr: "Créateur", es: "Creador" }), description: "3 mois · 100 crédits — le meilleur rapport.", priceMonthly: 24.99, priceYearly: 24.99, credits: 100, featured: true, sortOrder: 2 },
-  { id: "f4", slug: "sub_pro", nameJson: JSON.stringify({ en: "Pro", fr: "Pro", es: "Pro" }), description: "6 mois · 250 crédits — régulier.", priceMonthly: 49.99, priceYearly: 49.99, credits: 250, featured: false, sortOrder: 3 },
-  { id: "f5", slug: "sub_business", nameJson: JSON.stringify({ en: "Business", fr: "Entreprise", es: "Empresa" }), description: "12 mois · 500 crédits — équipes.", priceMonthly: 99.99, priceYearly: 99.99, credits: 500, featured: false, sortOrder: 4 },
-  { id: "f6", slug: "recharge_mini", nameJson: JSON.stringify({ en: "Mini", fr: "Mini", es: "Mini" }), description: "10 crédits — tester sans engagement.", priceMonthly: 4.99, priceYearly: 4.99, credits: 10, featured: false, sortOrder: 100 },
-  { id: "f7", slug: "recharge_small", nameJson: JSON.stringify({ en: "Small", fr: "Petit", es: "Pequeño" }), description: "30 crédits — petit lot.", priceMonthly: 9.99, priceYearly: 9.99, credits: 30, featured: false, sortOrder: 101 },
-  { id: "f8", slug: "recharge_medium", nameJson: JSON.stringify({ en: "Medium", fr: "Moyen", es: "Mediano" }), description: "75 crédits — meilleur compromis.", priceMonthly: 19.99, priceYearly: 19.99, credits: 75, featured: true, sortOrder: 102 },
-  { id: "f9", slug: "recharge_large", nameJson: JSON.stringify({ en: "Large", fr: "Grand", es: "Grande" }), description: "200 crédits — gros volumes.", priceMonthly: 39.99, priceYearly: 39.99, credits: 200, featured: false, sortOrder: 103 },
-  { id: "f10", slug: "recharge_xl", nameJson: JSON.stringify({ en: "XL", fr: "XL", es: "XL" }), description: "500 crédits — le plus économique.", priceMonthly: 79.99, priceYearly: 79.99, credits: 500, featured: false, sortOrder: 104 },
+  { id: "f1", slug: "sub_free", nameJson: JSON.stringify({ en: "Free", fr: "Gratuit", es: "Gratis" }), description: "3 crédits — pour découvrir.", priceMonthly: 0, priceYearly: 0, currency: "EUR", credits: 3, featured: false, sortOrder: 0, whopPlanId: null, whopCheckoutUrl: null, billingPeriod: null },
+  { id: "f2", slug: "sub_starter", nameJson: JSON.stringify({ en: "Starter", fr: "Découverte", es: "Inicio" }), description: "Abonnement mensuel · 30 crédits/mois.", priceMonthly: 9.99, priceYearly: 9.99, currency: "EUR", credits: 30, featured: false, sortOrder: 1, whopPlanId: "plan_CfZL537w2pKOn", whopCheckoutUrl: null, billingPeriod: "monthly" },
+  { id: "f3", slug: "sub_creator", nameJson: JSON.stringify({ en: "Creator", fr: "Créateur", es: "Creador" }), description: "Abonnement mensuel · 100 crédits/mois.", priceMonthly: 24.99, priceYearly: 24.99, currency: "EUR", credits: 100, featured: true, sortOrder: 2, whopPlanId: "plan_ljP4MuzoKR235", whopCheckoutUrl: null, billingPeriod: "monthly" },
+  { id: "f4", slug: "sub_pro", nameJson: JSON.stringify({ en: "Pro", fr: "Pro", es: "Pro" }), description: "Abonnement mensuel · 250 crédits/mois.", priceMonthly: 49.99, priceYearly: 49.99, currency: "EUR", credits: 250, featured: false, sortOrder: 3, whopPlanId: "plan_iZlkOxrRs9OHY", whopCheckoutUrl: null, billingPeriod: "monthly" },
+  { id: "f5", slug: "sub_business", nameJson: JSON.stringify({ en: "Business", fr: "Entreprise", es: "Empresa" }), description: "Abonnement mensuel · 500 crédits/mois.", priceMonthly: 99.99, priceYearly: 99.99, currency: "EUR", credits: 500, featured: false, sortOrder: 4, whopPlanId: "plan_Gk5R2N2OViuiK", whopCheckoutUrl: null, billingPeriod: "monthly" },
+  { id: "f6", slug: "recharge_mini", nameJson: JSON.stringify({ en: "Mini", fr: "Mini", es: "Mini" }), description: "10 crédits — tester sans engagement.", priceMonthly: 4.99, priceYearly: 4.99, currency: "EUR", credits: 10, featured: false, sortOrder: 100, whopPlanId: null, whopCheckoutUrl: null, billingPeriod: "one_time" },
+  { id: "f7", slug: "recharge_small", nameJson: JSON.stringify({ en: "Small", fr: "Petit", es: "Pequeño" }), description: "30 crédits — petit lot.", priceMonthly: 9.99, priceYearly: 9.99, currency: "EUR", credits: 30, featured: false, sortOrder: 101, whopPlanId: null, whopCheckoutUrl: null, billingPeriod: "one_time" },
+  { id: "f8", slug: "recharge_medium", nameJson: JSON.stringify({ en: "Medium", fr: "Moyen", es: "Mediano" }), description: "75 crédits — meilleur compromis.", priceMonthly: 19.99, priceYearly: 19.99, currency: "EUR", credits: 75, featured: true, sortOrder: 102, whopPlanId: null, whopCheckoutUrl: null, billingPeriod: "one_time" },
+  { id: "f9", slug: "recharge_large", nameJson: JSON.stringify({ en: "Large", fr: "Grand", es: "Grande" }), description: "200 crédits — gros volumes.", priceMonthly: 39.99, priceYearly: 39.99, currency: "EUR", credits: 200, featured: false, sortOrder: 103, whopPlanId: null, whopCheckoutUrl: null, billingPeriod: "one_time" },
+  { id: "f10", slug: "recharge_xl", nameJson: JSON.stringify({ en: "XL", fr: "XL", es: "XL" }), description: "500 crédits — le plus économique.", priceMonthly: 79.99, priceYearly: 79.99, currency: "EUR", credits: 500, featured: false, sortOrder: 104, whopPlanId: null, whopCheckoutUrl: null, billingPeriod: "one_time" },
 ];
 
 /**
@@ -63,9 +68,13 @@ export default async function Page({
         description: p.description,
         priceMonthly: p.priceMonthly,
         priceYearly: p.priceYearly,
+        currency: p.currency,
         credits: p.credits,
         featured: p.featured,
         sortOrder: p.sortOrder,
+        whopPlanId: p.whopPlanId ?? null,
+        whopCheckoutUrl: p.whopCheckoutUrl ?? null,
+        billingPeriod: p.billingPeriod ?? null,
       }));
     }
   } catch (err) {
@@ -191,14 +200,14 @@ function PlanCard({
 
         <div className="mt-3 flex items-baseline gap-1">
           <span className="text-2xl font-bold">
-            ${plan.priceMonthly.toFixed(2)}
+            €{plan.priceMonthly.toFixed(2)}
           </span>
           {isRecharge ? (
             <span className="text-xs text-muted-foreground">une fois</span>
           ) : isFree ? (
             <span className="text-xs text-muted-foreground">pour toujours</span>
           ) : (
-            <span className="text-xs text-muted-foreground">/engagement</span>
+            <span className="text-xs text-muted-foreground">/mois</span>
           )}
         </div>
 
@@ -209,25 +218,38 @@ function PlanCard({
 
         {!isFree && (
           <p className="mt-1 text-[10px] text-muted-foreground">
-            ${pricePerCredit.toFixed(3)} / crédit
+            €{pricePerCredit.toFixed(3)} / crédit
           </p>
         )}
 
         <div className="mt-4 pt-4 border-t border-border/40">
-          <Button
-            asChild
-            size="sm"
-            className={
-              featured
-                ? "w-full bg-brand-gradient text-white hover:opacity-90"
-                : "w-full"
-            }
-            variant={featured ? "default" : "outline"}
-          >
-            <Link href={isFree ? `/${locale}/signup` : `/${locale}/contact`}>
-              {cta}
-            </Link>
-          </Button>
+          {isFree ? (
+            <Button
+              asChild
+              size="sm"
+              className="w-full"
+              variant="outline"
+            >
+              <Link href={`/${locale}/signup`}>{cta}</Link>
+            </Button>
+          ) : plan.whopPlanId ? (
+            // ✅ Plan avec Whop → checkout intégré
+            <PlanCheckoutButton
+              planSlug={plan.slug}
+              label={cta}
+              featured={featured}
+            />
+          ) : (
+            // Plan sans Whop (recharge) → contact
+            <Button
+              asChild
+              size="sm"
+              className={featured ? "w-full bg-brand-gradient text-white hover:opacity-90" : "w-full"}
+              variant={featured ? "default" : "outline"}
+            >
+              <Link href={`/${locale}/contact`}>{cta}</Link>
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>

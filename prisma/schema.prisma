@@ -193,21 +193,122 @@ model SiteSettings {
 
 model PricingPlan {
   id          String   @id @default(cuid())
-  // Internal slug, e.g. "free", "pro", "business"
+  // Internal slug, e.g. "sub_free", "sub_starter", "recharge_mini"
   slug        String   @unique
   // i18n: name is a JSON object like {"en":"Pro","fr":"Pro","es":"Pro"}
   nameJson    String
   description String
   priceMonthly Float
   priceYearly  Float
-  currency    String   @default("USD")
+  currency    String   @default("EUR")
   credits     Int
   // Highlighted in the pricing table
   featured    Boolean  @default(false)
   enabled     Boolean  @default(true)
   sortOrder   Int      @default(0)
+
+  // === Whop integration (only for sub_* plans; null for recharges/free) ===
+  // Whop plan id, e.g. "plan_CfZL537w2pKOn"
+  whopPlanId       String?
+  // Optional checkout URL override (otherwise generated via Whop API)
+  whopCheckoutUrl  String?
+  // "monthly" | "yearly" | "one_time"
+  billingPeriod    String?
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  whopPayments    WhopPayment[]
+  planChanges     PricingPlanChange[]
+}
+
+// ============================================================================
+// WHOP EVENTS (idempotence — one row per Whop event id, UNIQUE constraint)
+// ============================================================================
+
+model WhopEvent {
+  id            String   @id @default(cuid())
+  // Whop's event id — used as idempotence key (UNIQUE)
+  whopEventId   String   @unique
+  // Event type: "payment.succeeded" | "payment.failed" | "membership.activated" | ...
+  eventType     String
+  // Whop payment id (if available in the event payload)
+  whopPaymentId String?
+  // Whop membership id (if available)
+  whopMembershipId String?
+  // AllCombiner user id (from metadata.userId, validated)
+  userId        String?
+  // Plan id (slug) — determined server-side from Whop plan_id
+  planSlug      String?
+  // "succeeded" | "failed" | "ignored" | "unknown_plan" | "no_user"
+  status        String
+  // Number of credits granted (0 if not granted)
+  creditsGranted Int     @default(0)
+  // Raw event payload (JSON string) for audit/debug
+  rawPayload    String
+  // Error message (if status != succeeded)
+  error         String?
+  processedAt   DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  @@index([userId])
+  @@index([eventType])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// WHOP PAYMENTS (one row per payment — linked to user + plan)
+// ============================================================================
+
+model WhopPayment {
+  id            String   @id @default(cuid())
+  // Whop payment id (UNIQUE — prevents double-credit on retries)
+  whopPaymentId String   @unique
+  userId        String
+  planId        String
+  // Whop event that triggered this payment (for audit)
+  whopEventId   String?
+  // Amount + currency (from Whop, never trust client)
+  amount        Float
+  currency      String   @default("EUR")
+  // Credits granted (from plan, never from client)
+  credits       Int
+  // "succeeded" | "failed" | "refunded"
+  status        String
+  // Whop subscription/membership id (for recurring billing)
+  whopMembershipId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  plan PricingPlan @relation(fields: [planId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// PRICING PLAN CHANGES (audit log of admin edits to plans)
+// ============================================================================
+
+model PricingPlanChange {
+  id          String   @id @default(cuid())
+  planId      String
+  // Admin user id who made the change
+  adminId     String
+  // Field name that was changed (e.g. "priceMonthly", "whopPlanId")
+  field       String
+  // Previous value (stringified)
+  oldValue    String?
+  // New value (stringified)
+  newValue    String?
+  createdAt   DateTime @default(now())
+
+  plan PricingPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([planId])
+  @@index([adminId])
+  @@index([createdAt])
 }
 
 // ============================================================================
