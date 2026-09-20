@@ -13,9 +13,8 @@ import {
 import { signOut } from "next-auth/react";
 import { LogOut, LayoutDashboard, Shield } from "lucide-react";
 import { type Locale, useTranslatedPathname } from "@/i18n/routing";
-import type { Session } from "next-auth";
 
-export function UserMenu({ session }: { session: Session | null }) {
+export function UserMenu({ session }: { session: any }) {
   const t = useTranslations("Nav");
   const locale = useLocale() as Locale;
   const tPath = useTranslatedPathname();

@@ -2,7 +2,6 @@
 
 import { SessionProvider } from "next-auth/react";
 import type { ReactNode } from "react";
-import type { Session } from "next-auth";
 
 /**
  * Client wrapper around next-auth's SessionProvider.
@@ -16,7 +15,7 @@ export function AuthProvider({
   session,
 }: {
   children: ReactNode;
-  session?: Session | null;
+  session?: any;
 }) {
   return <SessionProvider session={session}>{children}</SessionProvider>;
 }

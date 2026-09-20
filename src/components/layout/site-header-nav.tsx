@@ -4,12 +4,11 @@ import Link from "next/link";
 import { useState } from "react";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { Menu, X } from "lucide-react";
+import { Menu, X, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { type Locale, useTranslatedPathname } from "@/i18n/routing";
 import { signOut } from "next-auth/react";
-import type { Session } from "next-auth";
 
 /**
  * Client-side nav for the header — handles mobile menu toggle + active link.
@@ -20,7 +19,7 @@ export function SiteHeaderNav({
   session,
 }: {
   locale: Locale;
-  session: Session | null;
+  session: any;
 }) {
   const t = useTranslations("Nav");
   const pathname = usePathname();
@@ -124,5 +123,3 @@ export function SiteHeaderNav({
     </>
   );
 }
-
-import { Sparkles } from "lucide-react";

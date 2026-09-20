@@ -1,9 +1,7 @@
 import Link from "next/link";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-import { type Locale } from "@/i18n/routing";
-import type { Session } from "next-auth";
+import type { Locale } from "@/i18n/routing";
 import { getTranslations } from "next-intl/server";
 import { SiteHeaderNav } from "./site-header-nav";
 import { LanguageSwitcherLazy } from "./language-switcher-lazy";
@@ -22,7 +20,7 @@ export async function SiteHeader({
   session,
 }: {
   locale: Locale;
-  session: Session | null;
+  session: any;
 }) {
   const t = await getTranslations({ locale, namespace: "Nav" });
 

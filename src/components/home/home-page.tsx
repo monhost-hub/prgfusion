@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import { Sparkles, Users, Scan, Handshake, Camera, ArrowRight, Upload, Cpu, Download, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
