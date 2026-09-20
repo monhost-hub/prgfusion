@@ -12,11 +12,8 @@ import { useTranslatedPathname } from "@/i18n/routing";
  *
  * Behavior:
  *  1. If the user is not logged in → redirect to /login
- *  2. If logged in:
- *     a) If plan.whopCheckoutUrl is set → redirect DIRECTLY to that URL
- *        (faster, no server round-trip, works even if /api/checkout is down)
- *     b) Else → POST /api/checkout/whop with { planSlug }
- *        The server creates a Whop Checkout Session and returns a checkoutUrl
+ *  2. If logged in → POST /api/checkout/whop with { planSlug }
+ *     The server creates a Whop Checkout Session with metadata.userId
  *  3. The server (not the client) determines:
  *     - which Whop plan id to use (from DB)
  *     - the price (from DB)
@@ -32,15 +29,12 @@ export function PlanCheckoutButton({
   planSlug,
   label,
   featured = false,
-  whopCheckoutUrl,
 }: {
   planSlug: string;
   label: string;
   featured?: boolean;
-  /** Optional direct Whop checkout URL — if set, we skip the API call */
-  whopCheckoutUrl?: string | null;
 }) {
-  const { data: session, status } = useSession();
+  const { status } = useSession();
   const [loading, setLoading] = useState(false);
   const tPath = useTranslatedPathname();
 
@@ -54,13 +48,7 @@ export function PlanCheckoutButton({
 
     setLoading(true);
 
-    // 2a. Direct redirect to Whop checkout URL (faster path)
-    if (whopCheckoutUrl && /^https:\/\/(www\.)?whop\.com\//i.test(whopCheckoutUrl)) {
-      window.location.href = whopCheckoutUrl;
-      return;
-    }
-
-    // 2b. Otherwise, create a checkout session via the API
+    // 2. Create a checkout session via the API (always — never redirect directly)
     try {
       const res = await fetch("/api/checkout/whop", {
         method: "POST",

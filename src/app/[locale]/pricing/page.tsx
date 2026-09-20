@@ -242,12 +242,11 @@ function PlanCard({
               <Link href={`/${locale}/signup`}>{cta}</Link>
             </Button>
           ) : plan.whopPlanId ? (
-            // ✅ Plan avec Whop → checkout intégré
+            // ✅ Plan avec Whop → checkout via API serveur (metadata.userId)
             <PlanCheckoutButton
               planSlug={plan.slug}
               label={cta}
               featured={featured}
-              whopCheckoutUrl={plan.whopCheckoutUrl}
             />
           ) : (
             // Plan sans Whop → contact (bouton visible)
