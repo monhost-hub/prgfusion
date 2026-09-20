@@ -1,10 +1,9 @@
 /**
  * Whop API client (server-side only).
  *
- * Docs:
- *   - https://docs.whop.com/api-reference/introduction
- *   - https://docs.whop.com/api-reference/create-checkout-session
- *   - Webhooks: https://docs.whop.com/api-reference/webhooks
+ * Uses the official @whop/sdk for checkout session creation.
+ * Webhook signature verification is done manually (see verifyWhopSignature below)
+ * because the SDK's webhooks.unwrap is not yet stable.
  *
  * SECURITY:
  *   - This module reads WHOP_COMPANY_API_KEY + WHOP_WEBHOOK_SECRET from env.
@@ -12,6 +11,8 @@
  *   - NEVER expose the API key or webhook secret to the browser.
  *   - The webhook signature is verified with timing-safe comparison.
  */
+
+import { WhopClient } from "@whop/sdk";
 
 const WHOP_API_BASE = "https://api.whop.com/api/v2";
 
@@ -35,30 +36,34 @@ export function isWhopConfigured(): boolean {
 }
 
 /**
- * Creates a Whop Checkout Session.
+ * Creates a Whop Checkout Configuration using the official @whop/sdk.
  *
- * Docs: POST /checkout/sessions
- * https://docs.whop.com/api-reference/create-checkout-session
+ * Docs: client.checkoutConfigurations.create()
+ * https://docs.whop.com/developer/guides/accept-payments
  *
  * We pass `metadata.userId` so the webhook can later associate the payment
  * with the right AllCombiner user. The webhook NEVER trusts the client —
  * it only reads `metadata.userId` that we set here on the server side.
+ *
+ * Note: The SDK uses `redirect_url` for the success redirect.
+ * Whop doesn't have a separate cancel_url in this API — the user simply
+ * stays on the Whop checkout page if they cancel.
  */
 export interface CreateCheckoutInput {
   /** Whop plan id, e.g. "plan_CfZL537w2pKOn" */
   planId: string;
   /** AllCombiner user id (stored in metadata, used by the webhook) */
   userId: string;
-  /** Success redirect URL */
+  /** Success redirect URL (maps to redirect_url in Whop SDK) */
   successUrl?: string;
-  /** Cancellation redirect URL */
+  /** Cancellation redirect URL (not directly supported by checkoutConfigurations — ignored) */
   cancelUrl?: string;
 }
 
 export interface CreateCheckoutResult {
   /** The hosted checkout URL the user should be redirected to */
   checkoutUrl: string;
-  /** Whop checkout session id (for audit) */
+  /** Whop checkout configuration id (for audit) */
   sessionId: string;
 }
 
@@ -66,48 +71,32 @@ export async function createCheckoutSession(
   input: CreateCheckoutInput
 ): Promise<CreateCheckoutResult> {
   const apiKey = getWhopApiKey();
-  const body: any = {
+
+  const client = new WhopClient({ token: apiKey });
+
+  const response = await client.checkoutConfigurations.create({
     plan_id: input.planId,
     metadata: {
       userId: input.userId,
       // Mark this checkout as coming from AllCombiner (for audit in Whop dashboard)
       source: "allcombiner",
     },
-  };
-  if (input.successUrl) body.success_url = input.successUrl;
-  if (input.cancelUrl) body.cancel_url = input.cancelUrl;
-
-  const res = await fetch(`${WHOP_API_BASE}/checkout/sessions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(15_000),
+    // redirect_url is where the user goes after successful payment
+    ...(input.successUrl ? { redirect_url: input.successUrl } : {}),
   });
 
-  if (!res.ok) {
-    const text = await safeText(res);
-    throw new Error(`Whop checkout create failed (${res.status}): ${text.slice(0, 300)}`);
-  }
-
-  const data: any = await res.json();
-  // Whop returns the checkout URL in `checkout_url` (hosted) or we can extract it
-  const checkoutUrl =
-    data?.checkout_url ??
-    data?.url ??
-    data?.hosted_url ??
-    (data?.id ? `https://whop.com/checkout/${data.id}` : null);
+  // The SDK returns a `purchase_url` — that's the hosted checkout URL
+  const checkoutUrl = response.purchase_url;
 
   if (!checkoutUrl) {
-    throw new Error(`Whop response did not contain a checkout URL: ${JSON.stringify(data).slice(0, 300)}`);
+    throw new Error(
+      `Whop checkout configuration did not return a purchase_url: ${JSON.stringify(response).slice(0, 300)}`
+    );
   }
 
   return {
     checkoutUrl,
-    sessionId: data?.id ?? "",
+    sessionId: response.id ?? "",
   };
 }
 
@@ -180,13 +169,5 @@ function timingSafeEqual(a: string, b: string): boolean {
     return tse(Buffer.from(a, "utf8"), Buffer.from(b, "utf8"));
   } catch {
     return false;
-  }
-}
-
-async function safeText(res: Response): Promise<string> {
-  try {
-    return await res.text();
-  } catch {
-    return "";
   }
 }
