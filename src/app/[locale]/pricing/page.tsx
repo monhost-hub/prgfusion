@@ -182,12 +182,12 @@ function PlanCard({
     <Card
       className={
         featured
-          ? "glass-card border-primary/40 shadow-glow relative"
-          : "glass-card relative"
+          ? "!bg-primary/15 !border-2 !border-primary/60 !shadow-glow relative backdrop-blur-md"
+          : "!bg-card !border !border-border/80 !shadow-lg hover:!border-primary/40 hover:!shadow-glow transition-all duration-200 relative backdrop-blur-sm"
       }
     >
       {featured && (
-        <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-brand-gradient text-white text-xs px-3 py-1 font-medium inline-flex items-center gap-1">
+        <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-brand-gradient text-white text-xs px-3 py-1 font-medium inline-flex items-center gap-1 z-10">
           <Sparkles className="h-3 w-3" />
           Populaire
         </span>
@@ -211,7 +211,7 @@ function PlanCard({
           )}
         </div>
 
-        <div className="mt-2 inline-flex items-center gap-1.5 self-start rounded-full bg-primary/10 text-primary px-2.5 py-1 text-xs font-medium">
+        <div className="mt-2 inline-flex items-center gap-1.5 self-start rounded-full bg-primary/15 text-primary px-2.5 py-1 text-xs font-medium border border-primary/20">
           <Check className="h-3 w-3" />
           {plan.credits} crédits
         </div>
