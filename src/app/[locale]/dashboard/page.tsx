@@ -1,5 +1,6 @@
 import { setRequestLocale, getTranslations } from "next-intl/server";
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 import { db } from "@/lib/db";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -7,6 +8,7 @@ import Link from "next/link";
 import { Sparkles, Coins, TrendingUp, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { CheckoutStatus } from "@/components/dashboard/checkout-status";
 
 export default async function Page({
   params,
@@ -99,6 +101,11 @@ export default async function Page({
           </CardContent>
         </Card>
       </div>
+
+      {/* === Statut de paiement après retour Whop === */}
+      <Suspense fallback={null}>
+        <CheckoutStatus initialCredits={userCredits} />
+      </Suspense>
 
       {/* === Stats === */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
