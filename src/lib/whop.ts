@@ -13,7 +13,7 @@
  *   - The webhook signature is verified with timing-safe comparison.
  */
 
-const WHOP_API_BASE = "https://api.whop.com/api/v5";
+const WHOP_API_BASE = "https://api.whop.com/api/v2";
 
 /** Returns the Whop Company API key, or throws if missing. */
 export function getWhopApiKey(): string {
