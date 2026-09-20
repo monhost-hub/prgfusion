@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useTranslations } from "next-intl";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
-import { Upload, X, RefreshCw, Sparkles, Download, AlertCircle, Image as ImageIcon } from "lucide-react";
+import { Upload, X, RefreshCw, Sparkles, Download, AlertCircle, Image as ImageIcon, Zap, Check, Coins } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -88,6 +88,50 @@ export function FusionPage() {
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // === Modèles IA + solde de crédits ===
+  const [models, setModels] = useState<Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    creditCost: number;
+    isActive: boolean;
+  }>>([]);
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+  const [userCredits, setUserCredits] = useState<number | null>(null);
+
+  // Fetch models on mount
+  useEffect(() => {
+    fetch("/api/models")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.models) {
+          setModels(data.models);
+          // Default to the active model
+          const active = data.models.find((m: any) => m.isActive);
+          setSelectedModelId(active?.id ?? data.models[0]?.id ?? null);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Fetch user credits when authenticated
+  useEffect(() => {
+    if (status === "authenticated") {
+      fetch("/api/user/credits")
+        .then((r) => r.json())
+        .then((data) => {
+          if (typeof data.credits === "number") {
+            setUserCredits(data.credits);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [status]);
+
+  const selectedModel = models.find((m) => m.id === selectedModelId);
+  const creditCost = selectedModel?.creditCost ?? 1;
+  const insufficientCredits = userCredits !== null && userCredits < creditCost;
+
   // Client-side validation
   const validateFile = useCallback(
     (file: File): string | null => {
@@ -166,6 +210,7 @@ export function FusionPage() {
         body: JSON.stringify({
           imageA: imageA.dataUrl,
           imageB: imageB.dataUrl,
+          modelId: selectedModelId, // ← send the user's chosen model
         }),
       });
 
@@ -178,17 +223,23 @@ export function FusionPage() {
         const msg =
           res.status === 401
             ? t("errorAuth")
-            : res.status === 429
-              ? t("errorRateLimit")
-              : res.status === 503
-                ? t("errorModel")
-                : data?.error || t("errorGeneric");
+            : res.status === 402
+              ? t("errorInsufficientCredits")
+              : res.status === 429
+                ? t("errorRateLimit")
+                : res.status === 503
+                  ? t("errorModel")
+                  : data?.error || t("errorGeneric");
         setError(msg);
         setProgress(0);
         setStep(0);
         return;
       }
       setResult(data.imageUrl);
+      // Update local credit balance from the server response
+      if (typeof data.balanceAfter === "number") {
+        setUserCredits(data.balanceAfter);
+      }
       toast.success(t("result"));
     } catch (e) {
       clearInterval(interval);
@@ -236,9 +287,66 @@ export function FusionPage() {
             />
           </div>
 
-          {/* Active model notice */}
-          <div className="mt-6 text-center text-sm text-muted-foreground">
-            {t("modelHint")}
+          {/* === Modèle IA + solde de crédits === */}
+          <div className="mt-8 max-w-3xl mx-auto">
+            {/* Solde de crédits */}
+            {userCredits !== null && (
+              <div className="flex items-center justify-center gap-2 mb-4 text-sm">
+                <Coins className="h-4 w-4 text-amber-500" />
+                <span className="text-muted-foreground">Ton solde :</span>
+                <span className={`font-bold ${userCredits > 0 ? "text-emerald-500" : "text-destructive"}`}>
+                  {userCredits} crédit{userCredits > 1 ? "s" : ""}
+                </span>
+              </div>
+            )}
+
+            {/* Sélecteur de modèle */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {models.map((m) => {
+                const isSelected = m.id === selectedModelId;
+                const canAfford = userCredits === null || userCredits >= m.creditCost;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setSelectedModelId(m.id)}
+                    disabled={isGenerating}
+                    className={`relative text-left rounded-xl border-2 p-4 transition-all ${
+                      isSelected
+                        ? "border-primary bg-primary/10 shadow-glow"
+                        : "border-border/60 bg-card hover:border-primary/40"
+                    } ${!canAfford ? "opacity-50 cursor-not-allowed" : ""}`}
+                  >
+                    {isSelected && (
+                      <div className="absolute top-2 right-2 grid h-5 w-5 place-items-center rounded-full bg-primary text-primary-foreground">
+                        <Check className="h-3 w-3" />
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 mb-1">
+                      <Zap className="h-4 w-4 text-primary" />
+                      <h3 className="font-semibold text-sm">{m.name}</h3>
+                    </div>
+                    <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
+                      {m.description}
+                    </p>
+                    <div className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 px-2 py-0.5 text-xs font-medium">
+                      <Coins className="h-3 w-3" />
+                      {m.creditCost} crédit{m.creditCost > 1 ? "s" : ""}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Alerte solde insuffisant */}
+            {insufficientCredits && (
+              <div className="mt-4 flex items-center justify-center gap-2 text-sm text-destructive">
+                <AlertCircle className="h-4 w-4" />
+                <span>
+                  Crédits insuffisants pour ce modèle. Il te faut {creditCost} crédit{creditCost > 1 ? "s" : ""}, tu en as {userCredits}.
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Error */}
@@ -254,7 +362,7 @@ export function FusionPage() {
             <Button
               size="lg"
               onClick={handleGenerate}
-              disabled={isGenerating || !imageA || !imageB || status !== "authenticated"}
+              disabled={isGenerating || !imageA || !imageB || status !== "authenticated" || insufficientCredits || !selectedModelId}
               className="bg-brand-gradient text-white hover:opacity-90 shadow-glow min-w-[200px]"
             >
               {isGenerating ? (

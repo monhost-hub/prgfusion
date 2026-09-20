@@ -26,6 +26,9 @@ model User {
   passwordHash  String
   // "USER" | "ADMIN"
   role          String    @default("USER")
+  // Credit balance — debited on each fusion based on the model's creditCost.
+  // Seeded to 3 on signup (free tier). Top-ups via recharges/subscriptions.
+  credits       Int       @default(3)
   emailVerified DateTime?
   image         String?
   createdAt     DateTime  @default(now())
@@ -34,6 +37,7 @@ model User {
   accounts      Account[]
   sessions      Session[]
   generations   Generation[]
+  creditTxns    CreditTransaction[]
 
   @@index([role])
 }
@@ -93,8 +97,12 @@ model AIModel {
   description String?
   // Approximate cost per generation in USD (informational)
   costPerCall Float    @default(0)
-  // Whether the model is selectable. Only one model can be `isActive=true` at a time.
+  // How many USER credits each fusion with this model costs.
+  // Lite = 1, Banana 2 = 2, Pro = 3 (set by admin, editable from UI).
+  creditCost  Int      @default(1)
+  // Whether the model is selectable by users in the fusion UI.
   enabled     Boolean  @default(true)
+  // Whether this is the default model selected in the UI (only one at a time).
   isActive    Boolean  @default(false)
   // Optional capability flags
   supportsImages Boolean @default(true)
@@ -129,8 +137,10 @@ model Generation {
   durationMs  Int?
   // sanitized error message (no stack traces)
   error       String?
-  // estimated cost in USD
+  // estimated cost in USD (informational, from OpenRouter)
   estimatedCost Float  @default(0)
+  // How many user credits were debited for this fusion
+  creditsUsed Int      @default(0)
   createdAt   DateTime @default(now())
 
   user  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -138,6 +148,29 @@ model Generation {
 
   @@index([userId])
   @@index([status])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// CREDIT TRANSACTIONS (audit log of every credit change)
+// ============================================================================
+
+model CreditTransaction {
+  id        String   @id @default(cuid())
+  userId    String
+  // Positive = credit added (purchase), negative = credit spent (fusion)
+  amount    Int
+  // Balance AFTER the transaction was applied (for audit)
+  balance   Int
+  // "fusion" | "signup_bonus" | "recharge" | "subscription" | "admin_adjustment" | "refund"
+  reason    String
+  // Optional reference (e.g. generation id, plan slug)
+  reference String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
   @@index([createdAt])
 }
 

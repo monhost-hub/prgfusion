@@ -42,17 +42,19 @@ const DEFAULT_MODELS = [
     name: "Nano Banana 2 Lite",
     providerId: "google/gemini-3.1-flash-image-preview",
     provider: "openrouter",
-    description: "Fastest tier — ideal for previews and quick drafts.",
+    description: "Le plus rapide. Idéal pour les aperçus et brouillons. ~9s par fusion.",
     costPerCall: 0.02,
+    creditCost: 1, // ← 1 crédit par fusion
     enabled: 1,
-    isActive: 1,
+    isActive: 1, // ← modèle par défaut sélectionné dans l'UI
   },
   {
     name: "Nano Banana 2",
     providerId: "google/gemini-3.1-flash-image-preview",
     provider: "openrouter",
-    description: "Balanced quality and speed for everyday fusion. ~9s per image, ~$0.067/call.",
+    description: "Qualité équilibrée pour un usage quotidien. ~9s par fusion.",
     costPerCall: 0.067,
+    creditCost: 2, // ← 2 crédits par fusion
     enabled: 1,
     isActive: 0,
   },
@@ -60,8 +62,9 @@ const DEFAULT_MODELS = [
     name: "Nano Banana Pro",
     providerId: "google/gemini-3.1-flash-image-preview",
     provider: "openrouter",
-    description: "Highest fidelity — best for portraits, prints, final delivery.",
+    description: "Fidélité maximale. Idéal pour portraits, tirages, livraison finale.",
     costPerCall: 0.12,
+    creditCost: 3, // ← 3 crédits par fusion
     enabled: 1,
     isActive: 0,
   },
@@ -194,6 +197,7 @@ const CREATE_TABLES_SQL = [
     \`name\` VARCHAR(191) NULL,
     \`passwordHash\` TEXT NOT NULL,
     \`role\` VARCHAR(191) NOT NULL DEFAULT 'USER',
+    \`credits\` INT NOT NULL DEFAULT 3,
     \`emailVerified\` DATETIME(3) NULL,
     \`image\` TEXT NULL,
     \`createdAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -202,6 +206,9 @@ const CREATE_TABLES_SQL = [
     INDEX \`User_role_idx\`(\`role\`),
     PRIMARY KEY (\`id\`)
   ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+  // Add 'credits' column to existing User table (idempotent — fails silently if exists)
+  `ALTER TABLE \`User\` ADD COLUMN IF NOT EXISTS \`credits\` INT NOT NULL DEFAULT 3`,
 
   `CREATE TABLE IF NOT EXISTS \`Account\` (
     \`id\` VARCHAR(191) NOT NULL,
@@ -248,6 +255,7 @@ const CREATE_TABLES_SQL = [
     \`provider\` VARCHAR(191) NOT NULL DEFAULT 'openrouter',
     \`description\` TEXT NULL,
     \`costPerCall\` DOUBLE NOT NULL DEFAULT 0,
+    \`creditCost\` INT NOT NULL DEFAULT 1,
     \`enabled\` BOOLEAN NOT NULL DEFAULT true,
     \`isActive\` BOOLEAN NOT NULL DEFAULT false,
     \`supportsImages\` BOOLEAN NOT NULL DEFAULT true,
@@ -257,6 +265,9 @@ const CREATE_TABLES_SQL = [
     INDEX \`AIModel_isActive_idx\`(\`isActive\`),
     PRIMARY KEY (\`id\`)
   ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+  // Add 'creditCost' column to existing AIModel table (idempotent)
+  `ALTER TABLE \`AIModel\` ADD COLUMN IF NOT EXISTS \`creditCost\` INT NOT NULL DEFAULT 1`,
 
   `CREATE TABLE IF NOT EXISTS \`Generation\` (
     \`id\` VARCHAR(191) NOT NULL,
@@ -270,6 +281,7 @@ const CREATE_TABLES_SQL = [
     \`durationMs\` INT NULL,
     \`error\` TEXT NULL,
     \`estimatedCost\` DOUBLE NOT NULL DEFAULT 0,
+    \`creditsUsed\` INT NOT NULL DEFAULT 0,
     \`createdAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     INDEX \`Generation_userId_idx\`(\`userId\`),
     INDEX \`Generation_status_idx\`(\`status\`),
@@ -277,6 +289,23 @@ const CREATE_TABLES_SQL = [
     PRIMARY KEY (\`id\`),
     CONSTRAINT \`Generation_userId_fkey\` FOREIGN KEY (\`userId\`) REFERENCES \`User\`(\`id\`) ON DELETE CASCADE,
     CONSTRAINT \`Generation_modelId_fkey\` FOREIGN KEY (\`modelId\`) REFERENCES \`AIModel\`(\`id\`)
+  ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+  // Add 'creditsUsed' column to existing Generation table (idempotent)
+  `ALTER TABLE \`Generation\` ADD COLUMN IF NOT EXISTS \`creditsUsed\` INT NOT NULL DEFAULT 0`,
+
+  `CREATE TABLE IF NOT EXISTS \`CreditTransaction\` (
+    \`id\` VARCHAR(191) NOT NULL,
+    \`userId\` VARCHAR(191) NOT NULL,
+    \`amount\` INT NOT NULL,
+    \`balance\` INT NOT NULL,
+    \`reason\` VARCHAR(191) NOT NULL,
+    \`reference\` VARCHAR(191) NULL,
+    \`createdAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    INDEX \`CreditTransaction_userId_idx\`(\`userId\`),
+    INDEX \`CreditTransaction_createdAt_idx\`(\`createdAt\`),
+    PRIMARY KEY (\`id\`),
+    CONSTRAINT \`CreditTransaction_userId_fkey\` FOREIGN KEY (\`userId\`) REFERENCES \`User\`(\`id\`) ON DELETE CASCADE
   ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
 
   `CREATE TABLE IF NOT EXISTS \`SiteSettings\` (
@@ -352,13 +381,17 @@ async function doInit(): Promise<void> {
       const passwordHash = await bcrypt.hash(adminPassword, 12);
       const id = `admin_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
       await db.user.create({
-        data: { id, email: adminEmail, name: adminName, passwordHash, role: "ADMIN", updatedAt: new Date() },
+        data: { id, email: adminEmail, name: adminName, passwordHash, role: "ADMIN", credits: 9999, updatedAt: new Date() },
       }).catch((e: any) => console.warn(`[db-init] Admin create failed: ${e.message}`));
-      console.log(`[db-init] ✓ Admin created: ${adminEmail}`);
+      console.log(`[db-init] ✓ Admin created: ${adminEmail} (credits: 9999)`);
     } else if (existingAdmin.role !== "ADMIN") {
-      await db.user.update({ where: { id: existingAdmin.id }, data: { role: "ADMIN", updatedAt: new Date() } }).catch(() => {});
-      console.log(`[db-init] ✓ User promoted to admin: ${adminEmail}`);
+      await db.user.update({ where: { id: existingAdmin.id }, data: { role: "ADMIN", credits: 9999, updatedAt: new Date() } }).catch(() => {});
+      console.log(`[db-init] ✓ User promoted to admin: ${adminEmail} (credits: 9999)`);
     } else {
+      // Ensure admin always has 9999 credits (in case it was changed)
+      if (existingAdmin.credits !== 9999) {
+        await db.user.update({ where: { id: existingAdmin.id }, data: { credits: 9999, updatedAt: new Date() } }).catch(() => {});
+      }
       console.log("[db-init] ✓ Admin already exists");
     }
 
@@ -375,12 +408,13 @@ async function doInit(): Promise<void> {
             provider: m.provider,
             description: m.description,
             costPerCall: m.costPerCall,
+            creditCost: m.creditCost,
             enabled: Boolean(m.enabled),
             isActive: Boolean(m.isActive),
             updatedAt: new Date(),
           },
         }).catch((e: any) => console.warn(`[db-init] Model create failed: ${e.message}`));
-        console.log(`[db-init] ✓ Model created: ${m.name}`);
+        console.log(`[db-init] ✓ Model created: ${m.name} (creditCost: ${m.creditCost})`);
       }
     }
 

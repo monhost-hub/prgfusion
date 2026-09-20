@@ -21,11 +21,13 @@ export const POST = apiRoute(async (req: NextRequest) => {
   const provider = String(body?.provider || "openrouter").trim() || "openrouter";
   const description = String(body?.description || "").trim() || null;
   const costPerCall = Number(body?.costPerCall || 0);
+  const creditCost = parseInt(String(body?.creditCost ?? 1), 10);
   const enabled = Boolean(body?.enabled ?? true);
   const isActive = Boolean(body?.isActive ?? false);
 
   if (!name || !providerId) throw new HttpError(400, "name and providerId are required.");
   if (!Number.isFinite(costPerCall) || costPerCall < 0) throw new HttpError(400, "Invalid costPerCall.");
+  if (!Number.isFinite(creditCost) || creditCost < 1) throw new HttpError(400, "creditCost must be >= 1.");
 
   // If new model is active, deactivate all others.
   if (isActive) {
@@ -33,7 +35,7 @@ export const POST = apiRoute(async (req: NextRequest) => {
   }
 
   const model = await db.aIModel.create({
-    data: { name, providerId, provider, description, costPerCall, enabled, isActive },
+    data: { name, providerId, provider, description, costPerCall, creditCost, enabled, isActive },
   });
   return NextResponse.json({ model });
 });

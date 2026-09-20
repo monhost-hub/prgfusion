@@ -22,6 +22,9 @@ export const PATCH = apiRoute(async (req: NextRequest, ctx) => {
   if (typeof body?.costPerCall === "number" && Number.isFinite(body.costPerCall)) {
     data.costPerCall = body.costPerCall;
   }
+  if (typeof body?.creditCost === "number" && Number.isFinite(body.creditCost) && body.creditCost >= 1) {
+    data.creditCost = Math.floor(body.creditCost);
+  }
   if (typeof body?.enabled === "boolean") {
     data.enabled = body.enabled;
     if (!body.enabled && existing.isActive) data.isActive = false;
