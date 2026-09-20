@@ -11,10 +11,15 @@ export default async function Page({
   setRequestLocale(locale);
   const t = await getTranslations({ locale, namespace: "Admin" });
 
-  const users = await db.user.findMany({
-    select: { id: true, email: true, name: true, role: true, createdAt: true },
-    orderBy: { createdAt: "desc" },
-  });
+  let users: any[] = [];
+  try {
+    users = await db.user.findMany({
+      select: { id: true, email: true, name: true, role: true, credits: true, createdAt: true },
+      orderBy: { createdAt: "desc" },
+    });
+  } catch (err) {
+    console.error("[admin/users] DB error:", err);
+  }
 
   return (
     <AdminUsersClient
