@@ -1,7 +1,10 @@
 import { NextIntlClientProvider } from "next-intl";
 import { notFound } from "next/navigation";
-import { getMessages, setRequestLocale } from "next-intl/server";
+import { getMessages, setRequestLocale, getTranslations } from "next-intl/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { routing } from "@/i18n/routing";
+import type { Locale } from "@/i18n/routing";
 import { AuthProvider } from "@/components/auth/auth-provider";
 import { SiteHeader } from "@/components/layout/site-header";
 import { SiteFooter } from "@/components/layout/site-footer";
@@ -26,15 +29,64 @@ export default async function LocaleLayout({
   }
   setRequestLocale(locale);
 
-  const messages = await getMessages();
+  // Get session server-side to pass to AuthProvider (avoids client polling)
+  const session = await getServerSession(authOptions).catch(() => null);
+
+  // Get all messages — we need them for NextIntlClientProvider
+  const allMessages = await getMessages();
+
+  // Filter messages to only pass what Client Components need on the initial load:
+  // - Nav: SiteHeaderNav (mobile menu)
+  // - LanguageSwitcher: LanguageSwitcher (lazy but needs messages on load)
+  // - Fusion: PlanCheckoutButton on /pricing (uses Fusion.errorAuth etc.)
+  // - Auth: LoginForm, SignupForm
+  // - Contact: ContactForm
+  // - Common: various client components
+  // Other namespaces (Home, Pricing, Faq, Legal, Privacy, Dashboard, Admin, Errors, Metadata)
+  // are used by Server Components that call getTranslations() directly.
+  const clientMessages: Record<string, any> = {};
+  const neededNamespaces = [
+    "Nav",
+    "LanguageSwitcher",
+    "Fusion",
+    "Auth",
+    "Contact",
+    "Common",
+    "Errors",
+    "Pricing",
+    "Dashboard",
+  ];
+  for (const ns of neededNamespaces) {
+    if (allMessages[ns]) {
+      clientMessages[ns] = allMessages[ns];
+    }
+  }
+
+  // Get footer strings server-side (footer is now a Server Component)
+  const tFooter = await getTranslations({ locale, namespace: "Footer" });
+  const tNav = await getTranslations({ locale, namespace: "Nav" });
+  const footerStrings = {
+    tagline: tFooter("tagline"),
+    product: tFooter("product"),
+    legal: tFooter("legal"),
+    languages: tFooter("languages"),
+    rights: tFooter("rights"),
+    home: tNav("home"),
+    fusion: tNav("fusion"),
+    pricing: tNav("pricing"),
+    faq: tNav("faq"),
+    contact: tNav("contact"),
+    legalNotice: tFooter("legalNotice"),
+    privacy: tFooter("privacy"),
+  };
 
   return (
-    <NextIntlClientProvider locale={locale} messages={messages}>
-      <AuthProvider>
+    <NextIntlClientProvider locale={locale} messages={clientMessages}>
+      <AuthProvider session={session}>
         <div className="flex min-h-screen flex-col">
-          <SiteHeader />
+          <SiteHeader locale={locale as Locale} session={session} />
           <main className="flex-1">{children}</main>
-          <SiteFooter />
+          <SiteFooter locale={locale as Locale} strings={footerStrings} />
         </div>
       </AuthProvider>
     </NextIntlClientProvider>

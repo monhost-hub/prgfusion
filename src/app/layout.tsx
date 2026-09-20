@@ -1,9 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
-import { Toaster } from "@/components/ui/toaster";
-import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
+import { Toaster } from "@/components/ui/toaster-lazy";
+import { Toaster as SonnerToaster } from "@/components/ui/sonner-lazy";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
@@ -31,6 +31,7 @@ export const viewport: Viewport = {
 
 /**
  * Root layout — wraps the entire app.
+ * Toasters are lazy-loaded (ssr: false) to reduce initial JS.
  */
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (

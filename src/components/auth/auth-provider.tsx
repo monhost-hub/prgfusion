@@ -2,16 +2,21 @@
 
 import { SessionProvider } from "next-auth/react";
 import type { ReactNode } from "react";
+import type { Session } from "next-auth";
 
 /**
  * Client wrapper around next-auth's SessionProvider.
  *
- * next-auth v4's SessionProvider uses React Context in a way that doesn't
- * play well with React 19 Server Components when imported directly from a
- * server layout. Wrapping it in a "use client" file isolates the context
- * boundary and avoids the "React Context is unavailable in Server
- * Components" error.
+ * Accepts an optional `session` prop to avoid the initial network request
+ * to /api/auth/session. When provided, the client immediately has the
+ * session data without polling.
  */
-export function AuthProvider({ children }: { children: ReactNode }) {
-  return <SessionProvider>{children}</SessionProvider>;
+export function AuthProvider({
+  children,
+  session,
+}: {
+  children: ReactNode;
+  session?: Session | null;
+}) {
+  return <SessionProvider session={session}>{children}</SessionProvider>;
 }
