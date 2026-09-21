@@ -10,7 +10,9 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
+  // ⚠️ TEMPORARY: SQLite for local testing only.
+  // For production, switch back to: provider = "mysql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
