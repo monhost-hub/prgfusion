@@ -39,10 +39,13 @@ export function PlanCheckoutButton({
   const tPath = useTranslatedPathname();
 
   async function handleClick() {
-    // 1. Check auth
+    // 1. Check auth — if not authenticated, redirect to /login with callbackUrl=/pricing
+    //    so the user comes back to Pricing after a successful login.
     if (status !== "authenticated") {
       toast.info("Connecte-toi pour t'abonner.");
-      window.location.href = tPath("/login");
+      const pricingPath = tPath("/pricing");
+      const loginUrl = `${tPath("/login")}?callbackUrl=${encodeURIComponent(pricingPath)}`;
+      window.location.href = loginUrl;
       return;
     }
 

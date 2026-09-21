@@ -1,5 +1,6 @@
 import { setRequestLocale, getTranslations } from "next-intl/server";
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { LoginForm } from "@/components/auth/login-form";
 
 export default async function Page({
@@ -11,7 +12,11 @@ export default async function Page({
   setRequestLocale(locale);
   return (
     <div className="container mx-auto px-4 py-12 md:py-20">
-      <LoginForm />
+      {/* Suspense boundary required because LoginForm uses useSearchParams
+          (for the ?callbackUrl=... parameter coming from the Pricing page). */}
+      <Suspense fallback={null}>
+        <LoginForm />
+      </Suspense>
     </div>
   );
 }

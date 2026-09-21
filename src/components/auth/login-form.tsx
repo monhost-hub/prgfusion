@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { LogIn, Loader2 } from "lucide-react";
@@ -12,11 +12,46 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { useTranslatedPathname } from "@/i18n/routing";
 
+/**
+ * Validates a callback URL to prevent open-redirect attacks.
+ *
+ * Rules:
+ *  - Must be a relative URL (start with "/")
+ *  - Must NOT start with "//" (protocol-relative URL — would be https://evil.com)
+ *  - Must NOT contain a colon before the first "/" (avoids "/\evil.com" tricks)
+ *  - Empty/invalid → falls back to /dashboard
+ *
+ * Examples:
+ *  - "/fr/pricing"           → OK
+ *  - "/fr/dashboard"         → OK
+ *  - "//evil.com"            → REJECTED (fallback to /dashboard)
+ *  - "https://evil.com"      → REJECTED (doesn't start with "/")
+ *  - ""                      → fallback to /dashboard
+ */
+function safeCallbackUrl(raw: string | null | undefined, fallback: string): string {
+  if (!raw) return fallback;
+  if (!raw.startsWith("/")) return fallback;
+  if (raw.startsWith("//")) return fallback;
+  // Decode once in case it was URL-encoded (e.g. %2F → /)
+  try {
+    const decoded = decodeURIComponent(raw);
+    if (!decoded.startsWith("/") || decoded.startsWith("//")) return fallback;
+    return decoded;
+  } catch {
+    return fallback;
+  }
+}
+
 export function LoginForm() {
   const t = useTranslations("Auth");
   const tPath = useTranslatedPathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
+
+  // Read & validate callbackUrl from ?callbackUrl=...
+  // Default: /dashboard. If the user came from Pricing, this will be /{locale}/pricing.
+  const callbackUrl = safeCallbackUrl(searchParams.get("callbackUrl"), tPath("/dashboard"));
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -29,6 +64,9 @@ export function LoginForm() {
       email,
       password,
       redirect: false,
+      // NextAuth will use this as the post-login redirect target.
+      // We've already validated it's a relative path (no open-redirect risk).
+      callbackUrl,
     });
 
     if (res?.error) {
@@ -37,7 +75,10 @@ export function LoginForm() {
       return;
     }
     toast.success(t("welcomeBack", { name: email }));
-    router.push(tPath("/dashboard"));
+    // NextAuth returns res.url when callbackUrl is set — use it as the destination.
+    // Fallback to our validated callbackUrl if NextAuth didn't return a URL.
+    const destination = res?.url || callbackUrl;
+    router.push(destination);
     router.refresh();
   }
 

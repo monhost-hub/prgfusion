@@ -36,17 +36,18 @@ const SANDBOX_PLAN_CREDITS = 30;
 /**
  * Production test plan ($1 one-time).
  * Used for real production payment testing — NOT a commercial plan.
- * Each successful payment grants 1 test credit.
+ * Each successful payment grants 10 test credits.
+ * (10 instead of 1 makes the credit grant visible in the UI during testing.)
  */
 const TEST_PLAN_ID = "plan_MheIAOiaGcRWe";
-const TEST_PLAN_CREDITS = 1;
+const TEST_PLAN_CREDITS = 10;
 
 /** Returns true if a whopPlanId is the production test plan. */
 export function isTestPlan(whopPlanId: string): boolean {
   return whopPlanId === TEST_PLAN_ID;
 }
 
-/** Returns the test plan credits (1). */
+/** Returns the test plan credits (10). */
 export function getTestPlanCredits(): number {
   return TEST_PLAN_CREDITS;
 }

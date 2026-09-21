@@ -73,10 +73,14 @@ export const POST = apiRoute(async (req: NextRequest) => {
     throw new HttpError(400, "This plan does not support online payment yet.");
   }
 
-  // 5. Build success/cancel URLs
+  // 5. Build success/cancel URLs.
+  //    BOTH point to /dashboard because the CheckoutStatus box component
+  //    (which handles ?checkout=success|cancelled|error) only lives on
+  //    /dashboard. Pointing cancelUrl to /dashboard?checkout=cancelled
+  //    ensures the user sees the "Paiement annulé" box after cancelling.
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://allcombiner.com";
   const successUrl = `${appUrl}/dashboard?checkout=success`;
-  const cancelUrl = `${appUrl}/pricing?checkout=cancelled`;
+  const cancelUrl = `${appUrl}/dashboard?checkout=cancelled`;
 
   // 6. Create the Whop checkout session (server-side only)
   let checkout;
