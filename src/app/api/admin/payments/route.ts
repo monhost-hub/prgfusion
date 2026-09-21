@@ -41,6 +41,7 @@ export const GET = apiRoute(async () => {
     whopConfigured: isWhopConfigured(),
     whopMode: isSandbox() ? "sandbox" : "production",
     totalRevenue: totalRevenue._sum.amount || 0,
+    testPlanId: "plan_MheIAOiaGcRWe",
     plans,
     recentPayments,
     recentEvents,

@@ -33,6 +33,24 @@ const SANDBOX_API_BASE = "https://sandbox-api.whop.com/api/v1";
 const SANDBOX_PLAN_ID = "plan_qQ58RuDGa0lKf";
 const SANDBOX_PLAN_CREDITS = 30;
 
+/**
+ * Production test plan ($1 one-time).
+ * Used for real production payment testing — NOT a commercial plan.
+ * Each successful payment grants 1 test credit.
+ */
+const TEST_PLAN_ID = "plan_MheIAOiaGcRWe";
+const TEST_PLAN_CREDITS = 1;
+
+/** Returns true if a whopPlanId is the production test plan. */
+export function isTestPlan(whopPlanId: string): boolean {
+  return whopPlanId === TEST_PLAN_ID;
+}
+
+/** Returns the test plan credits (1). */
+export function getTestPlanCredits(): number {
+  return TEST_PLAN_CREDITS;
+}
+
 /** Returns true if sandbox mode is enabled. */
 export function isSandbox(): boolean {
   return process.env.WHOP_SANDBOX === "true";

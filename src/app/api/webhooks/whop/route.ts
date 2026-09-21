@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { verifyWhopSignature, isWhopConfigured, isSandbox, isSandboxPlan, getSandboxPlanCredits } from "@/lib/whop";
+import { verifyWhopSignature, isWhopConfigured, isSandbox, isSandboxPlan, getSandboxPlanCredits, isTestPlan, getTestPlanCredits } from "@/lib/whop";
 
 /**
  * POST /api/webhooks/whop
@@ -150,11 +150,17 @@ export async function POST(req: NextRequest) {
   //
   //    SANDBOX: If whopPlanId is the sandbox test plan (plan_qQ58RuDGa0lKf),
   //    use a hardcoded test mapping (30 credits) instead of looking up the DB.
+  //
+  //    PRODUCTION TEST: If whopPlanId is the prod test plan (plan_MheIAOiaGcRWe),
+  //    use a hardcoded mapping (1 credit) — allows repeated $1 test payments.
+  //    Each payment gets a unique whopPaymentId → idempotence at payment level
+  //    still prevents double-credit for the SAME payment, but allows MULTIPLE
+  //    different $1 payments to each grant 1 credit.
   let plan: any = null;
   let planCredits = 0;
 
   if (whopPlanId && isSandboxPlan(whopPlanId)) {
-    // Sandbox test plan — use hardcoded mapping
+    // Sandbox test plan
     plan = {
       id: "sandbox_plan",
       slug: "sandbox_test",
@@ -163,6 +169,16 @@ export async function POST(req: NextRequest) {
     };
     planCredits = plan.credits;
     console.log(`[whop-webhook] sandbox plan detected → ${planCredits} credits`);
+  } else if (whopPlanId && isTestPlan(whopPlanId)) {
+    // Production test plan ($1)
+    plan = {
+      id: "test_plan",
+      slug: "test_1dollar",
+      credits: getTestPlanCredits(),
+      priceMonthly: 1.0,
+    };
+    planCredits = plan.credits;
+    console.log(`[whop-webhook] production test plan detected → ${planCredits} credit`);
   } else if (whopPlanId) {
     // Production — look up in DB
     plan = await db.pricingPlan
@@ -291,10 +307,11 @@ export async function POST(req: NextRequest) {
 
       // b) Insert WhopPayment (UNIQUE on whopPaymentId → idempotent at payment level)
       //    If whopPaymentId is missing, skip (we still have the event for audit).
-      //    SANDBOX: plan.id is "sandbox_plan" (not a real DB row) → skip WhopPayment
+      //    SANDBOX + TEST PLAN: plan.id is not a real DB row → skip WhopPayment
       //    insertion to avoid foreign key violation. The WhopEvent still logs everything.
       let payment: any = null;
-      if (whopPaymentId && !isSandboxPlan(whopPlanId || "")) {
+      const isVirtualPlan = isSandboxPlan(whopPlanId || "") || isTestPlan(whopPlanId || "");
+      if (whopPaymentId && !isVirtualPlan) {
         try {
           payment = await tx.whopPayment.create({
             data: {
