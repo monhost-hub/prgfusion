@@ -1,12 +1,13 @@
+"use client";
+
 import Link from "next/link";
+import { useTranslations, useLocale } from "next-intl";
 import { Sparkles } from "lucide-react";
 import { locales, localeNames, localeFlags, type Locale } from "@/i18n/routing";
 
 /**
- * Global footer for AllCombiner — Server Component.
- *
- * Receives all translated strings + locale as props from the server layout.
- * No "use client", no useTranslations, no useLocale — pure HTML.
+ * Global footer for AllCombiner — Client Component.
+ * Uses useTranslations for i18n.
  */
 export function SiteFooter({
   locale,
@@ -47,7 +48,6 @@ export function SiteFooter({
     <footer className="mt-auto border-t border-border/40 bg-muted/30">
       <div className="container mx-auto px-4 py-10">
         <div className="grid gap-8 md:grid-cols-4">
-          {/* Brand */}
           <div className="md:col-span-2 space-y-3">
             <Link
               href={`/${locale}`}
@@ -65,7 +65,6 @@ export function SiteFooter({
             </p>
           </div>
 
-          {/* Product */}
           <div>
             <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
               {strings.product}
@@ -73,10 +72,7 @@ export function SiteFooter({
             <ul className="space-y-2">
               {productNav.map((item) => (
                 <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    className="text-sm text-foreground/80 hover:text-foreground transition-colors"
-                  >
+                  <Link href={item.href} className="text-sm text-foreground/80 hover:text-foreground transition-colors">
                     {item.label}
                   </Link>
                 </li>
@@ -84,7 +80,6 @@ export function SiteFooter({
             </ul>
           </div>
 
-          {/* Legal + Languages */}
           <div>
             <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
               {strings.legal}
@@ -92,10 +87,7 @@ export function SiteFooter({
             <ul className="space-y-2">
               {legalNav.map((item) => (
                 <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    className="text-sm text-foreground/80 hover:text-foreground transition-colors"
-                  >
+                  <Link href={item.href} className="text-sm text-foreground/80 hover:text-foreground transition-colors">
                     {item.label}
                   </Link>
                 </li>
@@ -107,10 +99,7 @@ export function SiteFooter({
             <ul className="space-y-2">
               {locales.map((l) => (
                 <li key={l}>
-                  <Link
-                    href={`/${l}`}
-                    className="text-sm text-foreground/80 hover:text-foreground transition-colors"
-                  >
+                  <Link href={`/${l}`} className="text-sm text-foreground/80 hover:text-foreground transition-colors">
                     <span className="mr-1.5">{localeFlags[l]}</span>
                     {localeNames[l]}
                   </Link>
