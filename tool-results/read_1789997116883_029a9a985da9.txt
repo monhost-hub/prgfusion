@@ -1,0 +1,650 @@
+     1→/**
+     2→ * Runtime database initialization.
+     3→ *
+     4→ * Creates all tables and seeds default data at server startup.
+     5→ * Uses raw SQL via Prisma (no dependency on `prisma` CLI binary).
+     6→ *
+     7→ * This module is invoked by src/instrumentation.ts on server boot.
+     8→ * Idempotent: safe to run on every request (uses CREATE TABLE IF NOT EXISTS).
+     9→ */
+    10→import { PrismaClient } from "@prisma/client";
+    11→import bcrypt from "bcryptjs";
+    12→
+    13→let initPromise: Promise<void> | null = null;
+    14→
+    15→const DEFAULT_PROMPT = `You are a portrait photographer AI. You will receive TWO reference photographs of TWO DIFFERENT people.
+    16→
+    17→Your task: generate ONE single photorealistic photograph that shows BOTH people together in the same scene.
+    18→
+    19→CRITICAL IDENTITY RULES (highest priority):
+    20→- Person 1 (from image {{imageA}}): preserve their identity exactly. Match face shape, eyes, eyebrows, nose, mouth, jawline, ears, hair, skin tone, age, and any distinctive features (scars, freckles, glasses, birthmarks, facial hair). Do NOT modify their apparent age or proportions.
+    21→- Person 2 (from image {{imageB}}): preserve their identity exactly. Same rules as Person 1.
+    22→- Do NOT blend, average, or morph the two faces.
+    23→- Do NOT invent a new face that resembles either.
+    24→- Do NOT swap features between the two people.
+    25→- Each person must be unmistakably recognizable to someone who knows them.
+    26→
+    27→ANATOMY & INTERACTION:
+    28→- Natural, anatomically correct bodies.
+    29→- The two people should be in a believable, friendly interaction (e.g. standing next to each other, shaking hands, embracing, talking). Pose and gaze should connect them naturally.
+    30→- Avoid uncanny or impossible anatomy.
+    31→
+    32→DECOR & AMBIANCE:
+    33→- Choose a tasteful, realistic environment (e.g. a softly-lit studio, an outdoor scene at golden hour, a modern interior). Keep it simple so the people remain the focus.
+    34→- Cinematic lighting, shallow depth of field, photorealistic color grading.
+    35→
+    36→OUTPUT:
+    37→- ONE single image, photorealistic, no text overlay, no watermark, no border.
+    38→- Both people fully visible in frame.`;
+    39→
+    40→const DEFAULT_MODELS = [
+    41→  {
+    42→    name: "Nano Banana 2 Lite",
+    43→    providerId: "google/gemini-3.1-flash-image-preview",
+    44→    provider: "openrouter",
+    45→    description: "Le plus rapide. Idéal pour les aperçus et brouillons. ~9s par fusion.",
+    46→    costPerCall: 0.02,
+    47→    creditCost: 1, // ← 1 crédit par fusion
+    48→    enabled: 1,
+    49→    isActive: 1, // ← modèle par défaut sélectionné dans l'UI
+    50→  },
+    51→  {
+    52→    name: "Nano Banana 2",
+    53→    providerId: "google/gemini-3.1-flash-image-preview",
+    54→    provider: "openrouter",
+    55→    description: "Qualité équilibrée pour un usage quotidien. ~9s par fusion.",
+    56→    costPerCall: 0.067,
+    57→    creditCost: 2, // ← 2 crédits par fusion
+    58→    enabled: 1,
+    59→    isActive: 0,
+    60→  },
+    61→  {
+    62→    name: "Nano Banana Pro",
+    63→    providerId: "google/gemini-3.1-flash-image-preview",
+    64→    provider: "openrouter",
+    65→    description: "Fidélité maximale. Idéal pour portraits, tirages, livraison finale.",
+    66→    costPerCall: 0.12,
+    67→    creditCost: 3, // ← 3 crédits par fusion
+    68→    enabled: 1,
+    69→    isActive: 0,
+    70→  },
+    71→];
+    72→
+    73→const DEFAULT_PLANS = [
+    74→  // === ABONNEMENTS (sub_*) ===
+    75→  // Les 4 plans Whop sont associés à leur Plan ID via env vars.
+    76→  // L'admin peut les modifier depuis /admin/payments sans redéployer.
+    77→  {
+    78→    slug: "sub_free",
+    79→    nameJson: JSON.stringify({ en: "Free", fr: "Gratuit", es: "Gratis" }),
+    80→    description: "3 crédits offerts à l'inscription. Aucune carte requise.",
+    81→    priceMonthly: 0,
+    82→    priceYearly: 0,
+    83→    currency: "EUR",
+    84→    credits: 3,
+    85→    featured: 0,
+    86→    enabled: 1,
+    87→    sortOrder: 0,
+    88→    whopPlanId: null,
+    89→    whopCheckoutUrl: null,
+    90→    billingPeriod: null,
+    91→  },
+    92→  {
+    93→    slug: "sub_starter",
+    94→    nameJson: JSON.stringify({ en: "Starter", fr: "Découverte", es: "Inicio" }),
+    95→    description: "Abonnement mensuel · 30 crédits/mois — pour les curieux.",
+    96→    priceMonthly: 9.99,
+    97→    priceYearly: 9.99,
+    98→    currency: "EUR",
+    99→    credits: 30,
+   100→    featured: 0,
+   101→    enabled: 1,
+   102→    sortOrder: 1,
+   103→    whopPlanId: process.env.WHOP_STARTER_PLAN_ID || "plan_CfZL537w2pKOn",
+   104→    whopCheckoutUrl: `https://whop.com/checkout/${process.env.WHOP_STARTER_PLAN_ID || "plan_CfZL537w2pKOn"}`,
+   105→    billingPeriod: "monthly",
+   106→  },
+   107→  {
+   108→    slug: "sub_creator",
+   109→    nameJson: JSON.stringify({ en: "Creator", fr: "Créateur", es: "Creador" }),
+   110→    description: "Abonnement mensuel · 100 crédits/mois — le meilleur rapport qualité/prix.",
+   111→    priceMonthly: 24.99,
+   112→    priceYearly: 24.99,
+   113→    currency: "EUR",
+   114→    credits: 100,
+   115→    featured: 1,
+   116→    enabled: 1,
+   117→    sortOrder: 2,
+   118→    whopPlanId: process.env.WHOP_CREATOR_PLAN_ID || "plan_ljP4MuzoKR235",
+   119→    whopCheckoutUrl: `https://whop.com/checkout/${process.env.WHOP_CREATOR_PLAN_ID || "plan_ljP4MuzoKR235"}`,
+   120→    billingPeriod: "monthly",
+   121→  },
+   122→  {
+   123→    slug: "sub_pro",
+   124→    nameJson: JSON.stringify({ en: "Pro", fr: "Pro", es: "Pro" }),
+   125→    description: "Abonnement mensuel · 250 crédits/mois — pour les créateurs réguliers.",
+   126→    priceMonthly: 49.99,
+   127→    priceYearly: 49.99,
+   128→    currency: "EUR",
+   129→    credits: 250,
+   130→    featured: 0,
+   131→    enabled: 1,
+   132→    sortOrder: 3,
+   133→    whopPlanId: process.env.WHOP_PRO_PLAN_ID || "plan_iZlkOxrRs9OHY",
+   134→    whopCheckoutUrl: `https://whop.com/checkout/${process.env.WHOP_PRO_PLAN_ID || "plan_iZlkOxrRs9OHY"}`,
+   135→    billingPeriod: "monthly",
+   136→  },
+   137→  {
+   138→    slug: "sub_business",
+   139→    nameJson: JSON.stringify({ en: "Business", fr: "Entreprise", es: "Empresa" }),
+   140→    description: "Abonnement mensuel · 500 crédits/mois — pour les équipes et agences.",
+   141→    priceMonthly: 99.99,
+   142→    priceYearly: 99.99,
+   143→    currency: "EUR",
+   144→    credits: 500,
+   145→    featured: 0,
+   146→    enabled: 1,
+   147→    sortOrder: 4,
+   148→    whopPlanId: process.env.WHOP_BUSINESS_PLAN_ID || "plan_Gk5R2N2OViuiK",
+   149→    whopCheckoutUrl: `https://whop.com/checkout/${process.env.WHOP_BUSINESS_PLAN_ID || "plan_Gk5R2N2OViuiK"}`,
+   150→    billingPeriod: "monthly",
+   151→  },
+   152→
+   153→  // === RECHARGES (recharge_*) — achat unique via Whop, sans engagement ===
+   154→  // Les 5 recharges ont maintenant leur Plan ID Whop + Checkout URL directe.
+   155→  {
+   156→    slug: "recharge_mini",
+   157→    nameJson: JSON.stringify({ en: "Mini", fr: "Mini", es: "Mini" }),
+   158→    description: "10 crédits — pour tester sans engagement.",
+   159→    priceMonthly: 4.99,
+   160→    priceYearly: 4.99,
+   161→    currency: "EUR",
+   162→    credits: 10,
+   163→    featured: 0,
+   164→    enabled: 1,
+   165→    sortOrder: 100,
+   166→    whopPlanId: "plan_p5X53jTXOIYqp",
+   167→    whopCheckoutUrl: "https://whop.com/checkout/plan_p5X53jTXOIYqp",
+   168→    billingPeriod: "one_time",
+   169→  },
+   170→  {
+   171→    slug: "recharge_small",
+   172→    nameJson: JSON.stringify({ en: "Small", fr: "Petit", es: "Pequeño" }),
+   173→    description: "30 crédits — petit lot à l'unité.",
+   174→    priceMonthly: 9.99,
+   175→    priceYearly: 9.99,
+   176→    currency: "EUR",
+   177→    credits: 30,
+   178→    featured: 0,
+   179→    enabled: 1,
+   180→    sortOrder: 101,
+   181→    whopPlanId: "plan_K0XdfjjXukUN3",
+   182→    whopCheckoutUrl: "https://whop.com/checkout/plan_K0XdfjjXukUN3",
+   183→    billingPeriod: "one_time",
+   184→  },
+   185→  {
+   186→    slug: "recharge_medium",
+   187→    nameJson: JSON.stringify({ en: "Medium", fr: "Moyen", es: "Mediano" }),
+   188→    description: "75 crédits — le meilleur compromis pour les rechargeurs.",
+   189→    priceMonthly: 19.99,
+   190→    priceYearly: 19.99,
+   191→    currency: "EUR",
+   192→    credits: 75,
+   193→    featured: 1,
+   194→    enabled: 1,
+   195→    sortOrder: 102,
+   196→    whopPlanId: "plan_1v1cg4NMkpLfZ",
+   197→    whopCheckoutUrl: "https://whop.com/checkout/plan_1v1cg4NMkpLfZ",
+   198→    billingPeriod: "one_time",
+   199→  },
+   200→  {
+   201→    slug: "recharge_large",
+   202→    nameJson: JSON.stringify({ en: "Large", fr: "Grand", es: "Grande" }),
+   203→    description: "200 crédits — pour les gros volumes ponctuels.",
+   204→    priceMonthly: 39.99,
+   205→    priceYearly: 39.99,
+   206→    currency: "EUR",
+   207→    credits: 200,
+   208→    featured: 0,
+   209→    enabled: 1,
+   210→    sortOrder: 103,
+   211→    whopPlanId: "plan_ABI1GWRWr9DLV",
+   212→    whopCheckoutUrl: "https://whop.com/checkout/plan_ABI1GWRWr9DLV",
+   213→    billingPeriod: "one_time",
+   214→  },
+   215→  {
+   216→    slug: "recharge_xl",
+   217→    nameJson: JSON.stringify({ en: "XL", fr: "XL", es: "XL" }),
+   218→    description: "500 crédits — le plus économique au crédit près.",
+   219→    priceMonthly: 79.99,
+   220→    priceYearly: 79.99,
+   221→    currency: "EUR",
+   222→    credits: 500,
+   223→    featured: 0,
+   224→    enabled: 1,
+   225→    sortOrder: 104,
+   226→    whopPlanId: "plan_6Ga9zlu7SFTdd",
+   227→    whopCheckoutUrl: "https://whop.com/checkout/plan_6Ga9zlu7SFTdd",
+   228→    billingPeriod: "one_time",
+   229→  },
+   230→];
+   231→
+   232→/**
+   233→ * MySQL CREATE TABLE statements (idempotent via IF NOT EXISTS).
+   234→ * These match the Prisma schema exactly (provider = mysql).
+   235→ */
+   236→const CREATE_TABLES_SQL = [
+   237→  `CREATE TABLE IF NOT EXISTS \`User\` (
+   238→    \`id\` VARCHAR(191) NOT NULL,
+   239→    \`email\` VARCHAR(191) NOT NULL,
+   240→    \`name\` VARCHAR(191) NULL,
+   241→    \`passwordHash\` TEXT NOT NULL,
+   242→    \`role\` VARCHAR(191) NOT NULL DEFAULT 'USER',
+   243→    \`credits\` INT NOT NULL DEFAULT 3,
+   244→    \`emailVerified\` DATETIME(3) NULL,
+   245→    \`image\` TEXT NULL,
+   246→    \`createdAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+   247→    \`updatedAt\` DATETIME(3) NOT NULL,
+   248→    UNIQUE INDEX \`User_email_key\`(\`email\`),
+   249→    INDEX \`User_role_idx\`(\`role\`),
+   250→    PRIMARY KEY (\`id\`)
+   251→  ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+   252→
+   253→  // Add 'credits' column to existing User table (idempotent — fails silently if exists)
+   254→  `ALTER TABLE \`User\` ADD COLUMN IF NOT EXISTS \`credits\` INT NOT NULL DEFAULT 3`,
+   255→
+   256→  `CREATE TABLE IF NOT EXISTS \`Account\` (
+   257→    \`id\` VARCHAR(191) NOT NULL,
+   258→    \`userId\` VARCHAR(191) NOT NULL,
+   259→    \`type\` VARCHAR(191) NOT NULL,
+   260→    \`provider\` VARCHAR(191) NOT NULL,
+   261→    \`providerAccountId\` VARCHAR(191) NOT NULL,
+   262→    \`refresh_token\` TEXT NULL,
+   263→    \`access_token\` TEXT NULL,
+   264→    \`expires_at\` INT NULL,
+   265→    \`token_type\` VARCHAR(191) NULL,
+   266→    \`scope\` VARCHAR(191) NULL,
+   267→    \`id_token\` TEXT NULL,
+   268→    \`session_state\` TEXT NULL,
+   269→    UNIQUE INDEX \`Account_provider_providerAccountId_key\`(\`provider\`, \`providerAccountId\`),
+   270→    INDEX \`Account_userId_idx\`(\`userId\`),
+   271→    PRIMARY KEY (\`id\`),
+   272→    CONSTRAINT \`Account_userId_fkey\` FOREIGN KEY (\`userId\`) REFERENCES \`User\`(\`id\`) ON DELETE CASCADE
+   273→  ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+   274→
+   275→  `CREATE TABLE IF NOT EXISTS \`Session\` (
+   276→    \`id\` VARCHAR(191) NOT NULL,
+   277→    \`sessionToken\` VARCHAR(191) NOT NULL,
+   278→    \`userId\` VARCHAR(191) NOT NULL,
+   279→    \`expires\` DATETIME(3) NOT NULL,
+   280→    UNIQUE INDEX \`Session_sessionToken_key\`(\`sessionToken\`),
+   281→    INDEX \`Session_userId_idx\`(\`userId\`),
+   282→    PRIMARY KEY (\`id\`),
+   283→    CONSTRAINT \`Session_userId_fkey\` FOREIGN KEY (\`userId\`) REFERENCES \`User\`(\`id\`) ON DELETE CASCADE
+   284→  ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+   285→
+   286→  `CREATE TABLE IF NOT EXISTS \`VerificationToken\` (
+   287→    \`identifier\` VARCHAR(191) NOT NULL,
+   288→    \`token\` VARCHAR(191) NOT NULL,
+   289→    \`expires\` DATETIME(3) NOT NULL,
+   290→    UNIQUE INDEX \`VerificationToken_token_key\`(\`token\`),
+   291→    UNIQUE INDEX \`VerificationToken_identifier_token_key\`(\`identifier\`, \`token\`)
+   292→  ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+   293→
+   294→  `CREATE TABLE IF NOT EXISTS \`AIModel\` (
+   295→    \`id\` VARCHAR(191) NOT NULL,
+   296→    \`name\` VARCHAR(191) NOT NULL,
+   297→    \`providerId\` VARCHAR(191) NOT NULL,
+   298→    \`provider\` VARCHAR(191) NOT NULL DEFAULT 'openrouter',
+   299→    \`description\` TEXT NULL,
+   300→    \`costPerCall\` DOUBLE NOT NULL DEFAULT 0,
+   301→    \`creditCost\` INT NOT NULL DEFAULT 1,
+   302→    \`enabled\` BOOLEAN NOT NULL DEFAULT true,
+   303→    \`isActive\` BOOLEAN NOT NULL DEFAULT false,
+   304→    \`supportsImages\` BOOLEAN NOT NULL DEFAULT true,
+   305→    \`createdAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+   306→    \`updatedAt\` DATETIME(3) NOT NULL,
+   307→    INDEX \`AIModel_provider_idx\`(\`provider\`),
+   308→    INDEX \`AIModel_isActive_idx\`(\`isActive\`),
+   309→    PRIMARY KEY (\`id\`)
+   310→  ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+   311→
+   312→  // Add 'creditCost' column to existing AIModel table (idempotent)
+   313→  `ALTER TABLE \`AIModel\` ADD COLUMN IF NOT EXISTS \`creditCost\` INT NOT NULL DEFAULT 1`,
+   314→
+   315→  `CREATE TABLE IF NOT EXISTS \`Generation\` (
+   316→    \`id\` VARCHAR(191) NOT NULL,
+   317→    \`userId\` VARCHAR(191) NOT NULL,
+   318→    \`modelId\` VARCHAR(191) NOT NULL,
+   319→    \`status\` VARCHAR(191) NOT NULL DEFAULT 'pending',
+   320→    \`prompt\` LONGTEXT NOT NULL,
+   321→    \`inputAPath\` LONGTEXT NOT NULL,
+   322→    \`inputBPath\` LONGTEXT NOT NULL,
+   323→    \`outputPath\` LONGTEXT NULL,
+   324→    \`durationMs\` INT NULL,
+   325→    \`error\` TEXT NULL,
+   326→    \`estimatedCost\` DOUBLE NOT NULL DEFAULT 0,
+   327→    \`creditsUsed\` INT NOT NULL DEFAULT 0,
+   328→    \`createdAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+   329→    INDEX \`Generation_userId_idx\`(\`userId\`),
+   330→    INDEX \`Generation_status_idx\`(\`status\`),
+   331→    INDEX \`Generation_createdAt_idx\`(\`createdAt\`),
+   332→    PRIMARY KEY (\`id\`),
+   333→    CONSTRAINT \`Generation_userId_fkey\` FOREIGN KEY (\`userId\`) REFERENCES \`User\`(\`id\`) ON DELETE CASCADE,
+   334→    CONSTRAINT \`Generation_modelId_fkey\` FOREIGN KEY (\`modelId\`) REFERENCES \`AIModel\`(\`id\`)
+   335→  ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+   336→
+   337→  // Add 'creditsUsed' column to existing Generation table (idempotent)
+   338→  `ALTER TABLE \`Generation\` ADD COLUMN IF NOT EXISTS \`creditsUsed\` INT NOT NULL DEFAULT 0`,
+   339→
+   340→  `CREATE TABLE IF NOT EXISTS \`CreditTransaction\` (
+   341→    \`id\` VARCHAR(191) NOT NULL,
+   342→    \`userId\` VARCHAR(191) NOT NULL,
+   343→    \`amount\` INT NOT NULL,
+   344→    \`balance\` INT NOT NULL,
+   345→    \`reason\` VARCHAR(191) NOT NULL,
+   346→    \`reference\` VARCHAR(191) NULL,
+   347→    \`createdAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+   348→    INDEX \`CreditTransaction_userId_idx\`(\`userId\`),
+   349→    INDEX \`CreditTransaction_createdAt_idx\`(\`createdAt\`),
+   350→    PRIMARY KEY (\`id\`),
+   351→    CONSTRAINT \`CreditTransaction_userId_fkey\` FOREIGN KEY (\`userId\`) REFERENCES \`User\`(\`id\`) ON DELETE CASCADE
+   352→  ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+   353→
+   354→  `CREATE TABLE IF NOT EXISTS \`SiteSettings\` (
+   355→    \`id\` VARCHAR(191) NOT NULL,
+   356→    \`key\` VARCHAR(191) NOT NULL,
+   357→    \`value\` LONGTEXT NOT NULL,
+   358→    \`description\` TEXT NULL,
+   359→    \`updatedAt\` DATETIME(3) NOT NULL,
+   360→    UNIQUE INDEX \`SiteSettings_key_key\`(\`key\`),
+   361→    PRIMARY KEY (\`id\`)
+   362→  ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+   363→
+   364→  `CREATE TABLE IF NOT EXISTS \`PricingPlan\` (
+   365→    \`id\` VARCHAR(191) NOT NULL,
+   366→    \`slug\` VARCHAR(191) NOT NULL,
+   367→    \`nameJson\` LONGTEXT NOT NULL,
+   368→    \`description\` LONGTEXT NOT NULL,
+   369→    \`priceMonthly\` DOUBLE NOT NULL,
+   370→    \`priceYearly\` DOUBLE NOT NULL,
+   371→    \`currency\` VARCHAR(191) NOT NULL DEFAULT 'EUR',
+   372→    \`credits\` INT NOT NULL,
+   373→    \`featured\` BOOLEAN NOT NULL DEFAULT false,
+   374→    \`enabled\` BOOLEAN NOT NULL DEFAULT true,
+   375→    \`sortOrder\` INT NOT NULL DEFAULT 0,
+   376→    \`whopPlanId\` VARCHAR(191) NULL,
+   377→    \`whopCheckoutUrl\` LONGTEXT NULL,
+   378→    \`billingPeriod\` VARCHAR(191) NULL,
+   379→    \`createdAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+   380→    \`updatedAt\` DATETIME(3) NOT NULL,
+   381→    UNIQUE INDEX \`PricingPlan_slug_key\`(\`slug\`),
+   382→    PRIMARY KEY (\`id\`)
+   383→  ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+   384→
+   385→  // Add Whop columns to existing PricingPlan (idempotent)
+   386→  `ALTER TABLE \`PricingPlan\` ADD COLUMN IF NOT EXISTS \`whopPlanId\` VARCHAR(191) NULL`,
+   387→  `ALTER TABLE \`PricingPlan\` ADD COLUMN IF NOT EXISTS \`whopCheckoutUrl\` LONGTEXT NULL`,
+   388→  `ALTER TABLE \`PricingPlan\` ADD COLUMN IF NOT EXISTS \`billingPeriod\` VARCHAR(191) NULL`,
+   389→  // Migrate existing rows from USD to EUR
+   390→  `UPDATE \`PricingPlan\` SET \`currency\` = 'EUR' WHERE \`currency\` = 'USD' OR \`currency\` IS NULL`,
+   391→
+   392→  `CREATE TABLE IF NOT EXISTS \`ContactMessage\` (
+   393→    \`id\` VARCHAR(191) NOT NULL,
+   394→    \`name\` VARCHAR(191) NOT NULL,
+   395→    \`email\` VARCHAR(191) NOT NULL,
+   396→    \`subject\` VARCHAR(191) NULL,
+   397→    \`message\` LONGTEXT NOT NULL,
+   398→    \`status\` VARCHAR(191) NOT NULL DEFAULT 'new',
+   399→    \`createdAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+   400→    INDEX \`ContactMessage_status_idx\`(\`status\`),
+   401→    INDEX \`ContactMessage_createdAt_idx\`(\`createdAt\`),
+   402→    PRIMARY KEY (\`id\`)
+   403→  ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+   404→
+   405→  // === Whop tables ===
+   406→  `CREATE TABLE IF NOT EXISTS \`WhopEvent\` (
+   407→    \`id\` VARCHAR(191) NOT NULL,
+   408→    \`whopEventId\` VARCHAR(191) NOT NULL,
+   409→    \`eventType\` VARCHAR(191) NOT NULL,
+   410→    \`whopPaymentId\` VARCHAR(191) NULL,
+   411→    \`whopMembershipId\` VARCHAR(191) NULL,
+   412→    \`userId\` VARCHAR(191) NULL,
+   413→    \`planSlug\` VARCHAR(191) NULL,
+   414→    \`status\` VARCHAR(191) NOT NULL,
+   415→    \`creditsGranted\` INT NOT NULL DEFAULT 0,
+   416→    \`rawPayload\` LONGTEXT NOT NULL,
+   417→    \`error\` TEXT NULL,
+   418→    \`processedAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+   419→    \`createdAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+   420→    UNIQUE INDEX \`WhopEvent_whopEventId_key\`(\`whopEventId\`),
+   421→    INDEX \`WhopEvent_userId_idx\`(\`userId\`),
+   422→    INDEX \`WhopEvent_eventType_idx\`(\`eventType\`),
+   423→    INDEX \`WhopEvent_createdAt_idx\`(\`createdAt\`),
+   424→    PRIMARY KEY (\`id\`)
+   425→  ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+   426→
+   427→  `CREATE TABLE IF NOT EXISTS \`WhopPayment\` (
+   428→    \`id\` VARCHAR(191) NOT NULL,
+   429→    \`whopPaymentId\` VARCHAR(191) NOT NULL,
+   430→    \`userId\` VARCHAR(191) NOT NULL,
+   431→    \`planId\` VARCHAR(191) NULL,
+   432→    \`planType\` VARCHAR(191) NOT NULL DEFAULT 'commercial',
+   433→    \`whopEventId\` VARCHAR(191) NULL,
+   434→    \`amount\` DOUBLE NOT NULL,
+   435→    \`currency\` VARCHAR(191) NOT NULL DEFAULT 'EUR',
+   436→    \`credits\` INT NOT NULL,
+   437→    \`status\` VARCHAR(191) NOT NULL,
+   438→    \`whopMembershipId\` VARCHAR(191) NULL,
+   439→    \`createdAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+   440→    \`updatedAt\` DATETIME(3) NOT NULL,
+   441→    UNIQUE INDEX \`WhopPayment_whopPaymentId_key\`(\`whopPaymentId\`),
+   442→    INDEX \`WhopPayment_userId_idx\`(\`userId\`),
+   443→    INDEX \`WhopPayment_status_idx\`(\`status\`),
+   444→    INDEX \`WhopPayment_createdAt_idx\`(\`createdAt\`),
+   445→    PRIMARY KEY (\`id\`),
+   446→    CONSTRAINT \`WhopPayment_planId_fkey\` FOREIGN KEY (\`planId\`) REFERENCES \`PricingPlan\`(\`id\`)
+   447→  ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+   448→
+   449→  // Alter WhopPayment: make planId nullable + add planType column (idempotent)
+   450→  `ALTER TABLE \`WhopPayment\` MODIFY COLUMN \`planId\` VARCHAR(191) NULL`,
+   451→  `ALTER TABLE \`WhopPayment\` ADD COLUMN IF NOT EXISTS \`planType\` VARCHAR(191) NOT NULL DEFAULT 'commercial'`,
+   452→
+   453→  `CREATE TABLE IF NOT EXISTS \`PricingPlanChange\` (
+   454→    \`id\` VARCHAR(191) NOT NULL,
+   455→    \`planId\` VARCHAR(191) NOT NULL,
+   456→    \`adminId\` VARCHAR(191) NOT NULL,
+   457→    \`field\` VARCHAR(191) NOT NULL,
+   458→    \`oldValue\` TEXT NULL,
+   459→    \`newValue\` TEXT NULL,
+   460→    \`createdAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+   461→    INDEX \`PricingPlanChange_planId_idx\`(\`planId\`),
+   462→    INDEX \`PricingPlanChange_adminId_idx\`(\`adminId\`),
+   463→    INDEX \`PricingPlanChange_createdAt_idx\`(\`createdAt\`),
+   464→    PRIMARY KEY (\`id\`),
+   465→    CONSTRAINT \`PricingPlanChange_planId_fkey\` FOREIGN KEY (\`planId\`) REFERENCES \`PricingPlan\`(\`id\`) ON DELETE CASCADE
+   466→  ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+   467→];
+   468→
+   469→async function doInit(): Promise<void> {
+   470→  if (process.env.SKIP_DB_INIT === "true") return;
+   471→
+   472→  console.log("[db-init] Starting runtime database initialization…");
+   473→  const db = new PrismaClient();
+   474→
+   475→  try {
+   476→    // 1. Create tables if missing (raw SQL — no prisma CLI needed)
+   477→    console.log("[db-init] Creating tables if missing…");
+   478→    for (const sql of CREATE_TABLES_SQL) {
+   479→      try {
+   480→        await db.$executeRawUnsafe(sql);
+   481→      } catch (err: any) {
+   482→        // Ignore "already exists" errors
+   483→        if (!/already exists|Duplicate/i.test(err.message)) {
+   484→          console.warn(`[db-init] Table create warning: ${err.message.slice(0, 200)}`);
+   485→        }
+   486→      }
+   487→    }
+   488→    console.log("[db-init] ✓ Tables ready");
+   489→
+   490→    // 2. Seed admin user
+   491→    const adminEmail = (process.env.ADMIN_EMAIL ?? "admin@allcombiner.com").toLowerCase();
+   492→    const adminPassword = process.env.ADMIN_PASSWORD ?? "Admin123!2024";
+   493→    const adminName = process.env.ADMIN_NAME ?? "Admin";
+   494→
+   495→    const existingAdmin = await db.user.findUnique({ where: { email: adminEmail } }).catch(() => null);
+   496→    if (!existingAdmin) {
+   497→      const passwordHash = await bcrypt.hash(adminPassword, 12);
+   498→      const id = `admin_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+   499→      await db.user.create({
+   500→        data: { id, email: adminEmail, name: adminName, passwordHash, role: "ADMIN", credits: 9999, updatedAt: new Date() },
+   501→      }).catch((e: any) => console.warn(`[db-init] Admin create failed: ${e.message}`));
+   502→      console.log(`[db-init] ✓ Admin created: ${adminEmail} (credits: 9999)`);
+   503→    } else if (existingAdmin.role !== "ADMIN") {
+   504→      await db.user.update({ where: { id: existingAdmin.id }, data: { role: "ADMIN", credits: 9999, updatedAt: new Date() } }).catch(() => {});
+   505→      console.log(`[db-init] ✓ User promoted to admin: ${adminEmail} (credits: 9999)`);
+   506→    } else {
+   507→      // Ensure admin always has 9999 credits (in case it was changed)
+   508→      if (existingAdmin.credits !== 9999) {
+   509→        await db.user.update({ where: { id: existingAdmin.id }, data: { credits: 9999, updatedAt: new Date() } }).catch(() => {});
+   510→      }
+   511→      console.log("[db-init] ✓ Admin already exists");
+   512→    }
+   513→
+   514→    // 3. Seed AI models
+   515→    for (const m of DEFAULT_MODELS) {
+   516→      const existing = await db.aIModel.findFirst({ where: { providerId: m.providerId, name: m.name } }).catch(() => null);
+   517→      if (!existing) {
+   518→        const id = `model_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+   519→        await db.aIModel.create({
+   520→          data: {
+   521→            id,
+   522→            name: m.name,
+   523→            providerId: m.providerId,
+   524→            provider: m.provider,
+   525→            description: m.description,
+   526→            costPerCall: m.costPerCall,
+   527→            creditCost: m.creditCost,
+   528→            enabled: Boolean(m.enabled),
+   529→            isActive: Boolean(m.isActive),
+   530→            updatedAt: new Date(),
+   531→          },
+   532→        }).catch((e: any) => console.warn(`[db-init] Model create failed: ${e.message}`));
+   533→        console.log(`[db-init] ✓ Model created: ${m.name} (creditCost: ${m.creditCost})`);
+   534→      }
+   535→    }
+   536→
+   537→    // Ensure exactly one active model
+   538→    const activeCount = await db.aIModel.count({ where: { isActive: true } }).catch(() => 0);
+   539→    if (activeCount === 0) {
+   540→      const first = await db.aIModel.findFirst({ orderBy: { createdAt: "asc" } }).catch(() => null);
+   541→      if (first) {
+   542→        await db.aIModel.update({ where: { id: first.id }, data: { isActive: true, updatedAt: new Date() } }).catch(() => {});
+   543→        console.log(`[db-init] ✓ Activated default model: ${first.name}`);
+   544→      }
+   545→    }
+   546→
+   547→    // 4. Seed pricing plans
+   548→    for (const p of DEFAULT_PLANS) {
+   549→      const existing = await db.pricingPlan.findUnique({ where: { slug: p.slug } }).catch(() => null);
+   550→      if (!existing) {
+   551→        const id = `plan_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+   552→        await db.pricingPlan.create({
+   553→          data: {
+   554→            id,
+   555→            slug: p.slug,
+   556→            nameJson: p.nameJson,
+   557→            description: p.description,
+   558→            priceMonthly: p.priceMonthly,
+   559→            priceYearly: p.priceYearly,
+   560→            currency: p.currency || "EUR",
+   561→            credits: p.credits,
+   562→            featured: Boolean(p.featured),
+   563→            enabled: Boolean(p.enabled),
+   564→            sortOrder: p.sortOrder,
+   565→            whopPlanId: p.whopPlanId ?? null,
+   566→            whopCheckoutUrl: p.whopCheckoutUrl ?? null,
+   567→            billingPeriod: p.billingPeriod ?? null,
+   568→            updatedAt: new Date(),
+   569→          },
+   570→        }).catch((e: any) => console.warn(`[db-init] Plan create failed: ${e.message}`));
+   571→        console.log(`[db-init] ✓ Plan created: ${p.slug}${p.whopPlanId ? ` (whop: ${p.whopPlanId})` : ""}`);
+   572→      } else {
+   573→        // Update existing plan: sync ALL fields from DEFAULT_PLANS so the
+   574→        // admin can change them later via the UI, but the seed always
+   575→        // reflects the latest known configuration.
+   576→        const needsUpdate =
+   577→          (p.whopPlanId !== undefined && p.whopPlanId !== existing.whopPlanId) ||
+   578→          (p.whopCheckoutUrl !== undefined && p.whopCheckoutUrl !== existing.whopCheckoutUrl) ||
+   579→          (p.currency && existing.currency !== p.currency) ||
+   580→          (p.billingPeriod && existing.billingPeriod !== p.billingPeriod) ||
+   581→          existing.priceMonthly !== p.priceMonthly ||
+   582→          existing.credits !== p.credits ||
+   583→          existing.description !== p.description;
+   584→        if (needsUpdate) {
+   585→          await db.pricingPlan.update({
+   586→            where: { id: existing.id },
+   587→            data: {
+   588→              ...(p.whopPlanId !== undefined ? { whopPlanId: p.whopPlanId } : {}),
+   589→              ...(p.whopCheckoutUrl !== undefined ? { whopCheckoutUrl: p.whopCheckoutUrl } : {}),
+   590→              ...(p.currency ? { currency: p.currency } : {}),
+   591→              ...(p.billingPeriod ? { billingPeriod: p.billingPeriod } : {}),
+   592→              priceMonthly: p.priceMonthly,
+   593→              credits: p.credits,
+   594→              description: p.description,
+   595→              updatedAt: new Date(),
+   596→            },
+   597→          }).catch(() => {});
+   598→          console.log(`[db-init] ✓ Plan updated: ${p.slug} (synced config from seed)`);
+   599→        }
+   600→      }
+   601→    }
+   602→
+   603→    // === Cleanup: disable legacy plans (without sub_/recharge_ prefix) ===
+   604→    // These are leftover from the original 4-plan grid (free/starter/pro/business).
+   605→    // They were replaced by the new slugs (sub_free/sub_starter/etc.).
+   606→    // We disable them so they don't appear in the pricing page or admin list.
+   607→    const legacySlugs = ["free", "starter", "pro", "business"];
+   608→    for (const slug of legacySlugs) {
+   609→      const legacy = await db.pricingPlan.findUnique({ where: { slug } }).catch(() => null);
+   610→      if (legacy && legacy.enabled) {
+   611→        await db.pricingPlan.update({
+   612→          where: { id: legacy.id },
+   613→          data: { enabled: false, updatedAt: new Date() },
+   614→        }).catch(() => {});
+   615→        console.log(`[db-init] ✓ Disabled legacy plan: ${slug} (replaced by sub_${slug})`);
+   616→      }
+   617→    }
+   618→
+   619→    // 5. Seed fusion prompt
+   620→    const existingPrompt = await db.siteSettings.findUnique({ where: { key: "fusion_prompt" } }).catch(() => null);
+   621→    if (!existingPrompt) {
+   622→      const id = `setting_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+   623→      await db.siteSettings.create({
+   624→        data: {
+   625→          id,
+   626→          key: "fusion_prompt",
+   627→          value: DEFAULT_PROMPT,
+   628→          description: "Central prompt sent to the AI model with the two reference images.",
+   629→          updatedAt: new Date(),
+   630→        },
+   631→      }).catch((e: any) => console.warn(`[db-init] Prompt create failed: ${e.message}`));
+   632→      console.log("[db-init] ✓ Fusion prompt seeded");
+   633→    }
+   634→
+   635→    console.log("[db-init] 🎉 Database initialization complete");
+   636→  } catch (err) {
+   637→    console.error("[db-init] ❌ Initialization failed:", err);
+   638→    // Don't throw — let the server start anyway so admin can debug via UI
+   639→  } finally {
+   640→    await db.$disconnect();
+   641→  }
+   642→}
+   643→
+   644→export function ensureDbInitialized(): Promise<void> {
+   645→  if (!initPromise) {
+   646→    initPromise = doInit();
+   647→  }
+   648→  return initPromise;
+   649→}
+   650→
