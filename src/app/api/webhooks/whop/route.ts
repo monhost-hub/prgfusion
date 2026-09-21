@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { verifyWhopSignature, isWhopConfigured } from "@/lib/whop";
+import { verifyWhopSignature, isWhopConfigured, isSandbox, isSandboxPlan, getSandboxPlanCredits } from "@/lib/whop";
 
 /**
  * POST /api/webhooks/whop
@@ -41,7 +41,7 @@ export const runtime = "nodejs";
 export async function POST(req: NextRequest) {
   // 1. Check Whop is configured
   if (!isWhopConfigured()) {
-    console.warn("[whop-webhook] Whop not configured, ignoring event");
+    console.warn(`[whop-webhook] Whop not configured (${isSandbox() ? "sandbox" : "production"} mode), ignoring event`);
     return NextResponse.json({ error: "not configured" }, { status: 503 });
   }
 
@@ -147,11 +147,30 @@ export async function POST(req: NextRequest) {
   // 8. Look up the PricingPlan in DB by whopPlanId (source of truth)
   //    The webhook NEVER trusts credits from the client or from Whop metadata.
   //    It always reads credits from the AllCombiner DB.
+  //
+  //    SANDBOX: If whopPlanId is the sandbox test plan (plan_qQ58RuDGa0lKf),
+  //    use a hardcoded test mapping (30 credits) instead of looking up the DB.
   let plan: any = null;
-  if (whopPlanId) {
+  let planCredits = 0;
+
+  if (whopPlanId && isSandboxPlan(whopPlanId)) {
+    // Sandbox test plan — use hardcoded mapping
+    plan = {
+      id: "sandbox_plan",
+      slug: "sandbox_test",
+      credits: getSandboxPlanCredits(),
+      priceMonthly: 0.01,
+    };
+    planCredits = plan.credits;
+    console.log(`[whop-webhook] sandbox plan detected → ${planCredits} credits`);
+  } else if (whopPlanId) {
+    // Production — look up in DB
     plan = await db.pricingPlan
       .findFirst({ where: { whopPlanId } })
       .catch(() => null);
+    if (plan) {
+      planCredits = plan.credits;
+    }
   }
 
   if (!plan) {
@@ -250,7 +269,7 @@ export async function POST(req: NextRequest) {
   //     - WhopPayment row (UNIQUE whopPaymentId — idempotence at payment level)
   //     - User.credits += plan.credits
   //     - CreditTransaction (audit log)
-  const creditsToGrant = plan.credits;
+  const creditsToGrant = planCredits;
 
   try {
     const result = await db.$transaction(async (tx) => {
@@ -272,8 +291,10 @@ export async function POST(req: NextRequest) {
 
       // b) Insert WhopPayment (UNIQUE on whopPaymentId → idempotent at payment level)
       //    If whopPaymentId is missing, skip (we still have the event for audit).
+      //    SANDBOX: plan.id is "sandbox_plan" (not a real DB row) → skip WhopPayment
+      //    insertion to avoid foreign key violation. The WhopEvent still logs everything.
       let payment: any = null;
-      if (whopPaymentId) {
+      if (whopPaymentId && !isSandboxPlan(whopPlanId || "")) {
         try {
           payment = await tx.whopPayment.create({
             data: {
@@ -291,8 +312,6 @@ export async function POST(req: NextRequest) {
             },
           });
         } catch (e: any) {
-          // If duplicate whopPaymentId → already credited in a previous event.
-          // Roll back the WhopEvent insert + skip credit grant.
           if (/Unique constraint/i.test(e.message)) {
             throw new Error(`DUPLICATE_PAYMENT:${whopPaymentId}`);
           }

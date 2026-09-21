@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiRoute, requireAdmin, HttpError } from "@/lib/server";
 import { db } from "@/lib/db";
-import { isWhopConfigured } from "@/lib/whop";
+import { isWhopConfigured, isSandbox } from "@/lib/whop";
 
 /**
  * GET /api/admin/payments
@@ -39,6 +39,7 @@ export const GET = apiRoute(async () => {
 
   return NextResponse.json({
     whopConfigured: isWhopConfigured(),
+    whopMode: isSandbox() ? "sandbox" : "production",
     totalRevenue: totalRevenue._sum.amount || 0,
     plans,
     recentPayments,

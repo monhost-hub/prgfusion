@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiRoute, requireAuth, HttpError } from "@/lib/server";
 import { db } from "@/lib/db";
-import { createCheckoutSession, isWhopConfigured } from "@/lib/whop";
+import { createCheckoutSession, isWhopConfigured, isSandbox } from "@/lib/whop";
 
 /**
  * POST /api/checkout/whop
@@ -33,7 +33,7 @@ export const POST = apiRoute(async (req: NextRequest) => {
 
   // 2. Check Whop is configured
   if (!isWhopConfigured()) {
-    throw new HttpError(503, "Payment system is not configured. Please contact support.");
+    throw new HttpError(503, `Payment system is not configured (${isSandbox() ? "sandbox" : "production"} mode). Please contact support.`);
   }
 
   // 3. Parse body
