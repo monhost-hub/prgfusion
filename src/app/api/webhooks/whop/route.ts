@@ -307,18 +307,20 @@ export async function POST(req: NextRequest) {
 
       // b) Insert WhopPayment (UNIQUE on whopPaymentId → idempotent at payment level)
       //    If whopPaymentId is missing, skip (we still have the event for audit).
-      //    SANDBOX + TEST PLAN: plan.id is not a real DB row → skip WhopPayment
-      //    insertion to avoid foreign key violation. The WhopEvent still logs everything.
+      //    SANDBOX: skip (no real payment happened)
+      //    TEST PLAN + COMMERCIAL: insert with proper planId/planType
       let payment: any = null;
-      const isVirtualPlan = isSandboxPlan(whopPlanId || "") || isTestPlan(whopPlanId || "");
-      if (whopPaymentId && !isVirtualPlan) {
+      const isSandboxVirtual = isSandboxPlan(whopPlanId || "");
+      if (whopPaymentId && !isSandboxVirtual) {
+        const isTest = isTestPlan(whopPlanId || "");
         try {
           payment = await tx.whopPayment.create({
             data: {
               id: `wpm_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
               whopPaymentId,
               userId,
-              planId: plan.id,
+              planId: isTest ? null : plan.id,
+              planType: isTest ? "test_1dollar" : "commercial",
               whopEventId: wevt.id,
               amount: amount ?? plan.priceMonthly,
               currency: currency || "EUR",

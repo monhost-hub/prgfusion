@@ -428,7 +428,8 @@ const CREATE_TABLES_SQL = [
     \`id\` VARCHAR(191) NOT NULL,
     \`whopPaymentId\` VARCHAR(191) NOT NULL,
     \`userId\` VARCHAR(191) NOT NULL,
-    \`planId\` VARCHAR(191) NOT NULL,
+    \`planId\` VARCHAR(191) NULL,
+    \`planType\` VARCHAR(191) NOT NULL DEFAULT 'commercial',
     \`whopEventId\` VARCHAR(191) NULL,
     \`amount\` DOUBLE NOT NULL,
     \`currency\` VARCHAR(191) NOT NULL DEFAULT 'EUR',
@@ -444,6 +445,10 @@ const CREATE_TABLES_SQL = [
     PRIMARY KEY (\`id\`),
     CONSTRAINT \`WhopPayment_planId_fkey\` FOREIGN KEY (\`planId\`) REFERENCES \`PricingPlan\`(\`id\`)
   ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+  // Alter WhopPayment: make planId nullable + add planType column (idempotent)
+  `ALTER TABLE \`WhopPayment\` MODIFY COLUMN \`planId\` VARCHAR(191) NULL`,
+  `ALTER TABLE \`WhopPayment\` ADD COLUMN IF NOT EXISTS \`planType\` VARCHAR(191) NOT NULL DEFAULT 'commercial'`,
 
   `CREATE TABLE IF NOT EXISTS \`PricingPlanChange\` (
     \`id\` VARCHAR(191) NOT NULL,

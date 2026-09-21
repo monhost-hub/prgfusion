@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiRoute, requireAuth, HttpError } from "@/lib/server";
 import { db } from "@/lib/db";
-import { createCheckoutSession, isWhopConfigured, isSandbox } from "@/lib/whop";
+import { createCheckoutSession, isWhopConfigured, isSandbox, isTestPlan } from "@/lib/whop";
 
 /**
  * POST /api/checkout/whop
@@ -48,8 +48,21 @@ export const POST = apiRoute(async (req: NextRequest) => {
     throw new HttpError(400, "planSlug is required.");
   }
 
-  // 4. Look up the plan in DB (server-side — never trust client for price/credits)
-  const plan = await db.pricingPlan.findUnique({ where: { slug: planSlug } }).catch(() => null);
+  // 4. Look up the plan: either from DB (commercial) or hardcoded (test plan)
+  //    The test plan slug "test_1dollar" is NOT in the DB — it's a hardcoded
+  //    test plan that uses plan_MheIAOiaGcRWe on Whop.
+  let plan: any = null;
+  if (planSlug === "test_1dollar") {
+    plan = {
+      id: "test_plan",
+      slug: "test_1dollar",
+      whopPlanId: "plan_MheIAOiaGcRWe",
+      enabled: true,
+      nameJson: JSON.stringify({ en: "Test $1", fr: "Test 1$", es: "Test 1$" }),
+    };
+  } else {
+    plan = await db.pricingPlan.findUnique({ where: { slug: planSlug } }).catch(() => null);
+  }
   if (!plan) {
     throw new HttpError(404, "Plan not found.");
   }

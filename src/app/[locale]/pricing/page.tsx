@@ -160,12 +160,11 @@ export default async function Page({
       {/* === SECTION 3 : TEST PAIEMENT $1 === */}
       <div className="mt-8 text-center border-t border-border/40 pt-8">
         <p className="text-xs text-muted-foreground mb-3">Test de paiement</p>
-        <a
-          href="https://whop.com/checkout/plan_MheIAOiaGcRWe"
-          className="inline-flex items-center gap-1.5 rounded-md border border-border/60 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors"
-        >
-          Test paiement 1$
-        </a>
+        <PlanCheckoutButton
+          planSlug="test_1dollar"
+          label="Test paiement 1$"
+          featured={false}
+        />
       </div>
     </div>
   );
