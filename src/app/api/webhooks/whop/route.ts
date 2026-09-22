@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { verifyWhopSignature, isWhopConfigured, isSandbox, isSandboxPlan, getSandboxPlanCredits, isTestPlan, getTestPlanCredits } from "@/lib/whop";
+import { verifyWhopSignature, isWhopConfigured, isTestPlan, getTestPlanCredits } from "@/lib/whop";
 
 /**
  * POST /api/webhooks/whop
@@ -41,7 +41,7 @@ export const runtime = "nodejs";
 export async function POST(req: NextRequest) {
   // 1. Check Whop is configured
   if (!isWhopConfigured()) {
-    console.warn(`[whop-webhook] Whop not configured (${isSandbox() ? "sandbox" : "production"} mode), ignoring event`);
+    console.warn(`[whop-webhook] Whop not configured, ignoring event`);
     return NextResponse.json({ error: "not configured" }, { status: 503 });
   }
 
@@ -107,19 +107,23 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // 6. Determine event category (success / failure / lifecycle)
-  const isPaymentSuccess =
-    eventType === "payment.succeeded" ||
-    eventType === "payment.completed" ||
-    eventType === "membership.activated" ||
-    eventType === "membership.renewed" ||
-    eventType === "subscription.renewed";
+  // 6. Determine event category
+  //    CREDIT GRANT: only `payment.succeeded` triggers a credit grant.
+  //    All other events (membership.activated, payment.completed, renewed, etc.)
+  //    are logged for audit but do NOT credit the user.
+  //    Failures and deactivations are also logged without crediting.
+  const isPaymentSuccess = eventType === "payment.succeeded";
   const isPaymentFailure =
-    eventType === "payment.failed" || eventType === "payment.refunded";
+    eventType === "payment.failed" ||
+    eventType === "payment.refunded" ||
+    eventType === "payment.completed"; // intentionally treated as non-crediting
   const isDeactivation =
     eventType === "membership.deactivated" ||
     eventType === "membership.canceled" ||
-    eventType === "subscription.canceled";
+    eventType === "subscription.canceled" ||
+    eventType === "membership.activated" ||   // explicitly not crediting
+    eventType === "membership.renewed" ||     // explicitly not crediting
+    eventType === "subscription.renewed";     // explicitly not crediting
 
   // 7. If we can't determine the event type, log and exit
   if (!isPaymentSuccess && !isPaymentFailure && !isDeactivation) {
@@ -148,29 +152,16 @@ export async function POST(req: NextRequest) {
   //    The webhook NEVER trusts credits from the client or from Whop metadata.
   //    It always reads credits from the AllCombiner DB.
   //
-  //    SANDBOX: If whopPlanId is the sandbox test plan (plan_qQ58RuDGa0lKf),
-  //    use a hardcoded test mapping (30 credits) instead of looking up the DB.
-  //
   //    PRODUCTION TEST: If whopPlanId is the prod test plan (plan_MheIAOiaGcRWe),
-  //    use a hardcoded mapping (1 credit) — allows repeated $1 test payments.
+  //    use a hardcoded mapping (10 credits) — allows repeated $1 test payments.
   //    Each payment gets a unique whopPaymentId → idempotence at payment level
   //    still prevents double-credit for the SAME payment, but allows MULTIPLE
-  //    different $1 payments to each grant 1 credit.
+  //    different $1 payments to each grant 10 credits.
   let plan: any = null;
   let planCredits = 0;
 
-  if (whopPlanId && isSandboxPlan(whopPlanId)) {
-    // Sandbox test plan
-    plan = {
-      id: "sandbox_plan",
-      slug: "sandbox_test",
-      credits: getSandboxPlanCredits(),
-      priceMonthly: 0.01,
-    };
-    planCredits = plan.credits;
-    console.log(`[whop-webhook] sandbox plan detected → ${planCredits} credits`);
-  } else if (whopPlanId && isTestPlan(whopPlanId)) {
-    // Production test plan ($1)
+  if (whopPlanId && isTestPlan(whopPlanId)) {
+    // Production test plan ($1) — hardcoded mapping
     plan = {
       id: "test_plan",
       slug: "test_1dollar",
@@ -178,7 +169,7 @@ export async function POST(req: NextRequest) {
       priceMonthly: 1.0,
     };
     planCredits = plan.credits;
-    console.log(`[whop-webhook] production test plan detected → ${planCredits} credit`);
+    console.log(`[whop-webhook] production test plan detected → ${planCredits} credits`);
   } else if (whopPlanId) {
     // Production — look up in DB
     plan = await db.pricingPlan
@@ -307,11 +298,9 @@ export async function POST(req: NextRequest) {
 
       // b) Insert WhopPayment (UNIQUE on whopPaymentId → idempotent at payment level)
       //    If whopPaymentId is missing, skip (we still have the event for audit).
-      //    SANDBOX: skip (no real payment happened)
       //    TEST PLAN + COMMERCIAL: insert with proper planId/planType
       let payment: any = null;
-      const isSandboxVirtual = isSandboxPlan(whopPlanId || "");
-      if (whopPaymentId && !isSandboxVirtual) {
+      if (whopPaymentId) {
         const isTest = isTestPlan(whopPlanId || "");
         try {
           payment = await tx.whopPayment.create({

@@ -408,15 +408,6 @@ Go to `/admin/payments` to:
 
 All changes take effect immediately on `/pricing` — no redeploy needed.
 
-### Sandbox → Production
-
-1. In Whop dashboard, switch from Sandbox to Live mode
-2. Get the **live** `WHOP_COMPANY_API_KEY` and `WHOP_WEBHOOK_SECRET`
-3. Update env vars on Hostinger (hPanel → Git → Environment variables)
-4. Update the webhook URL in Whop dashboard (if different)
-5. Redeploy (or wait for next push)
-6. Test with a real card
-
 ### Tests
 
 Run the Whop integration tests:
