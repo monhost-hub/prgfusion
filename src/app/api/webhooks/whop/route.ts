@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { verifyWhopSignature, isWhopConfigured, isTestPlan, getTestPlanCredits } from "@/lib/whop";
+import { verifyWhopWebhook, isWhopConfigured, isTestPlan, getTestPlanCredits } from "@/lib/whop";
 
 /**
  * POST /api/webhooks/whop
@@ -8,10 +8,12 @@ import { verifyWhopSignature, isWhopConfigured, isTestPlan, getTestPlanCredits }
  * Whop webhook receiver. PUBLIC endpoint (no auth) but signed.
  *
  * Flow:
- *   1. Read raw body + Whop-Signature header
- *   2. Verify signature with WHOP_WEBHOOK_SECRET (timing-safe compare)
+ *   1. Read raw body
+ *   2. Verify Standard Webhooks signature using the official @whop/sdk helper
+ *      (reads `webhook-id`, `webhook-timestamp`, `webhook-signature` headers,
+ *       ±5 minute tolerance, base64 HMAC-SHA256)
  *      → if invalid, return 401 (don't process)
- *   3. Parse the event
+ *   3. The official helper returns the parsed payload directly
  *   4. IDEMPOTENCE: try to insert a WhopEvent row with whopEventId UNIQUE
  *      → if it already exists, return 200 (already processed, don't re-credit)
  *   5. Extract: eventType, whopPaymentId, whopMembershipId, userId (from metadata),
@@ -45,31 +47,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "not configured" }, { status: 503 });
   }
 
-  // 2. Read raw body + signature
+  // 2. Read raw body. NEVER use req.json() — signature covers the exact bytes.
   const rawBody = await req.text();
-  const signature = req.headers.get("whop-signature") || req.headers.get("Whop-Signature");
 
-  // 3. Verify signature
-  let isValid = false;
-  try {
-    isValid = verifyWhopSignature(rawBody, signature);
-  } catch (err: any) {
-    console.error("[whop-webhook] signature verification error:", err.message);
-    return NextResponse.json({ error: "signature error" }, { status: 401 });
-  }
-  if (!isValid) {
-    console.warn("[whop-webhook] invalid signature");
+  // 3. Build a flat headers record for the @whop/sdk helper.
+  //    The lookup inside `unwrapWebhook` is case-insensitive, so we just copy
+  //    everything as-is.
+  const headers: Record<string, string> = {};
+  req.headers.forEach((value, key) => {
+    headers[key.toLowerCase()] = value;
+  });
+
+  // 4. Verify the Standard Webhooks signature (and parse the body in one call).
+  const verification = verifyWhopWebhook(rawBody, headers);
+  if (!verification.ok) {
+    console.warn("[whop-webhook] signature rejected:", verification.reason);
     return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
 
-  // 4. Parse the event
-  let event: any;
-  try {
-    event = JSON.parse(rawBody);
-  } catch {
-    console.error("[whop-webhook] invalid JSON");
-    return NextResponse.json({ error: "invalid JSON" }, { status: 400 });
-  }
+  // 5. The payload is already parsed by `unwrapWebhook`. Keep using the same
+  //    `event` variable name so the existing business logic below is unchanged.
+  const event: any = verification.event;
 
   const whopEventId: string | undefined =
     event?.id || event?.event_id || event?.data?.id || `evt_${Date.now()}_${Math.random()}`;

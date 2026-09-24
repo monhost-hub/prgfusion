@@ -1,15 +1,22 @@
 /**
  * Whop API client (server-side only).
  *
- * Uses the official @whop/sdk for checkout session creation.
- * Webhook signature verification is done manually (see verifyWhopSignature below)
- * because the SDK's webhooks.unwrap is not yet stable.
+ * Uses the official @whop/sdk for:
+ *   - checkout session creation (WhopClient)
+ *   - webhook signature verification (unwrapWebhook from @whop/sdk/helpers)
+ *
+ * Whop signs webhooks with the Standard Webhooks specification:
+ *   - 3 headers: webhook-id, webhook-timestamp, webhook-signature
+ *   - Payload signed = `${webhook-id}.${webhook-timestamp}.${rawBody}`
+ *   - HMAC-SHA256, base64-encoded
+ *   - Header format: `v1,<base64>`
+ *   - ±5 minute timestamp tolerance
  *
  * SECURITY:
  *   - This module reads API keys + webhook secrets from env.
  *   - NEVER import this module from a client component.
  *   - NEVER expose the API key or webhook secret to the browser.
- *   - The webhook signature is verified with timing-safe comparison.
+ *   - Signature verification uses the official SDK (timing-safe under the hood).
  *
  * PRODUCTION ONLY:
  *   - The sandbox/test mode has been removed. All operations use the real
@@ -18,6 +25,10 @@
  */
 
 import { WhopClient } from "@whop/sdk";
+import {
+  unwrapWebhook,
+  WebhookVerificationError,
+} from "@whop/sdk/helpers";
 
 /**
  * Production test plan ($1 one-time).
@@ -110,52 +121,52 @@ export async function createCheckoutSession(
 }
 
 /**
- * Verifies the signature of a Whop webhook request.
- * Uses the production webhook secret (WHOP_WEBHOOK_SECRET).
+ * Result of a Whop webhook verification.
+ *
+ * - `ok: true`  → signature valid, `event` contains the parsed payload.
+ * - `ok: false` → signature invalid / missing headers / timestamp out of tolerance,
+ *   `reason` explains the failure (safe to log; never contains the secret).
  */
-export function verifyWhopSignature(
+export type VerifyWhopWebhookResult =
+  | { ok: true; event: Record<string, unknown> }
+  | { ok: false; reason: string };
+
+/**
+ * Verifies a Whop webhook request using the official @whop/sdk helper.
+ *
+ * Whop signs webhooks with the Standard Webhooks spec. The official
+ * `unwrapWebhook` helper handles:
+ *   - reading `webhook-id`, `webhook-timestamp`, `webhook-signature` headers
+ *     (case-insensitive)
+ *   - ±5 minute timestamp tolerance (rejects replay attacks)
+ *   - HMAC-SHA256 + base64 comparison (timing-safe under the hood)
+ *   - the `ws_` prefix on the secret
+ *
+ * @param rawBody    The raw request body (from `await req.text()`).
+ *                   Re-serializing the body would break the signature.
+ * @param headers    The request headers as a flat Record<string, string>.
+ *                   Build it from `req.headers` (see the webhook route).
+ * @param secret     The Whop webhook secret (with `ws_` prefix), defaults to
+ *                   WHOP_WEBHOOK_SECRET. Pass explicitly only for tests.
+ */
+export function verifyWhopWebhook(
   rawBody: string,
-  signatureHeader: string | null,
+  headers: Record<string, string>,
   secret: string = getWhopWebhookSecret()
-): boolean {
-  if (!signatureHeader) return false;
-
-  const parts = signatureHeader.split(",");
-  let timestamp = "";
-  let v1Signature = "";
-  for (const p of parts) {
-    const [k, v] = p.split("=");
-    if (k === "t") timestamp = v;
-    else if (k === "v1") v1Signature = v;
-  }
-
-  let expected: string;
-  if (timestamp && v1Signature) {
-    const signedPayload = `${timestamp}.${rawBody}`;
-    expected = hmacSha256Hex(signedPayload, secret);
-  } else {
-    expected = hmacSha256Hex(rawBody, secret);
-    v1Signature = signatureHeader.trim();
-  }
-
-  if (!v1Signature) return false;
-
-  return timingSafeEqual(expected, v1Signature);
-}
-
-function hmacSha256Hex(data: string, secret: string): string {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { createHmac } = require("node:crypto");
-  return createHmac("sha256", secret).update(data, "utf8").digest("hex");
-}
-
-function timingSafeEqual(a: string, b: string): boolean {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { timingSafeEqual: tse } = require("node:crypto");
-  if (a.length !== b.length) return false;
+): VerifyWhopWebhookResult {
   try {
-    return tse(Buffer.from(a, "utf8"), Buffer.from(b, "utf8"));
-  } catch {
-    return false;
+    const event = unwrapWebhook<Record<string, unknown>>(rawBody, {
+      headers,
+      key: secret,
+    });
+    return { ok: true, event: event ?? {} };
+  } catch (err: unknown) {
+    if (err instanceof WebhookVerificationError) {
+      return { ok: false, reason: err.message };
+    }
+    // unwrapWebhook throws a plain Error if `key` is missing/empty, and
+    // standardwebhooks can throw on JSON parse failure of the body.
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, reason: msg };
   }
 }

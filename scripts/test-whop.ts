@@ -400,6 +400,10 @@ async function main() {
   }
 
   // === TEST 7: signature invalide → webhook rejeté ===
+  // NOTE: This test now uses the REAL Standard Webhooks format that Whop
+  // actually sends. The previous version used a Stripe-style format that
+  // never matched real Whop traffic — see scripts/test-whop-signature.ts
+  // for the full signature-layer test suite.
   console.log("\nTEST 7: signature invalide → webhook rejeté");
   {
     // Build the event payload
@@ -416,17 +420,23 @@ async function main() {
     };
     const rawBody = JSON.stringify(event);
 
-    // Compute WRONG signature (with a different secret)
-    const { createHmac } = await import("node:crypto");
-    const wrongSig = createHmac("sha256", "WRONG_SECRET").update(rawBody).digest("hex");
+    // Build a WRONG Standard Webhooks signature (with a different secret)
+    const { createHmac, randomBytes } = await import("node:crypto");
+    const msgId = "msg_" + randomBytes(12).toString("hex");
     const timestamp = Math.floor(Date.now() / 1000).toString();
-    const signatureHeader = `t=${timestamp},v1=${wrongSig}`;
+    const toSign = `${msgId}.${timestamp}.${rawBody}`;
+    const wrongSig = createHmac("sha256", "ws_WRONG_SECRET").update(toSign, "utf8").digest("base64");
+    const headers = {
+      "webhook-id": msgId,
+      "webhook-timestamp": timestamp,
+      "webhook-signature": `v1,${wrongSig}`,
+    };
 
     // Verify with the right secret — should fail
-    const { verifyWhopSignature } = await import("../src/lib/whop");
+    const { verifyWhopWebhook } = await import("../src/lib/whop");
     process.env.WHOP_WEBHOOK_SECRET = WEBHOOK_SECRET;
-    const isValid = verifyWhopSignature(rawBody, signatureHeader, WEBHOOK_SECRET);
-    assert(isValid === false, "signature rejected");
+    const result = verifyWhopWebhook(rawBody, headers, WEBHOOK_SECRET);
+    assert(result.ok === false, "signature rejected");
   }
 
   // === TEST 8: utilisateur A ne peut pas recevoir le paiement de B ===
