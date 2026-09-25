@@ -44,6 +44,7 @@ model User {
   generations   Generation[]
   creditTxns    CreditTransaction[]
   creditLots    CreditLot[]
+  subscriptions UserSubscription[]
 
   @@index([role])
 }
@@ -252,6 +253,34 @@ model CreditLot {
   @@index([userId])
   @@index([expiresAt])
   @@index([source])
+}
+
+// ============================================================================
+// USER SUBSCRIPTIONS (Phase 2 — tracks active Whop memberships for subscriber pricing)
+// ============================================================================
+// Populated by the webhook on membership.activated / membership.deactivated /
+// membership.renewed events. The checkout API reads this table to decide whether
+// to offer the _subscriber variant of recharge plans (−25% discount).
+model UserSubscription {
+  id                String    @id @default(cuid())
+  userId            String
+  // Whop membership id (UNIQUE — one row per membership, not per renewal)
+  whopMembershipId  String    @unique
+  // Whop plan id (e.g. "plan_CfZL537w2pKOn" for Starter)
+  whopPlanId        String
+  // AllCombiner pricing plan slug (e.g. "sub_starter")
+  pricingPlanSlug   String
+  // "active" | "canceled" | "expired" | "past_due"
+  status            String
+  // When the current billing period ends (for subscriber eligibility check)
+  currentPeriodEnd  DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
 }
 
 // ============================================================================

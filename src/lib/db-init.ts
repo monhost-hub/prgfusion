@@ -403,6 +403,26 @@ const CREATE_TABLES_SQL = [
     CONSTRAINT \`CreditLot_userId_fkey\` FOREIGN KEY (\`userId\`) REFERENCES \`User\`(\`id\`) ON DELETE CASCADE
   ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
 
+  // === Phase 2: UserSubscription table (tracks active Whop memberships) ===
+  // Populated by the webhook on membership events. The checkout API reads this
+  // table to decide whether to offer the _subscriber variant of recharge plans.
+  `CREATE TABLE IF NOT EXISTS \`UserSubscription\` (
+    \`id\` VARCHAR(191) NOT NULL,
+    \`userId\` VARCHAR(191) NOT NULL,
+    \`whopMembershipId\` VARCHAR(191) NOT NULL,
+    \`whopPlanId\` VARCHAR(191) NOT NULL,
+    \`pricingPlanSlug\` VARCHAR(191) NOT NULL,
+    \`status\` VARCHAR(191) NOT NULL DEFAULT 'active',
+    \`currentPeriodEnd\` DATETIME(3) NULL,
+    \`createdAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    \`updatedAt\` DATETIME(3) NOT NULL,
+    UNIQUE INDEX \`UserSubscription_whopMembershipId_key\`(\`whopMembershipId\`),
+    INDEX \`UserSubscription_userId_idx\`(\`userId\`),
+    INDEX \`UserSubscription_status_idx\`(\`status\`),
+    PRIMARY KEY (\`id\`),
+    CONSTRAINT \`UserSubscription_userId_fkey\` FOREIGN KEY (\`userId\`) REFERENCES \`User\`(\`id\`) ON DELETE CASCADE
+  ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
   `CREATE TABLE IF NOT EXISTS \`ContactMessage\` (
     \`id\` VARCHAR(191) NOT NULL,
     \`name\` VARCHAR(191) NOT NULL,
