@@ -36,6 +36,10 @@ model User {
   credits       Int       @default(3)
   emailVerified DateTime?
   image         String?
+  // Session invalidation counter — incremented on password reset.
+  // Compared against JWT.sessionVersion in a future commit to invalidate
+  // all sessions issued before the reset. For now: DB column only.
+  sessionVersion Int       @default(0)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -84,6 +88,9 @@ model VerificationToken {
   identifier String
   token      String   @unique
   expires    DateTime
+  // "email_verify" | "password_reset" — distinguishes the two flows.
+  // Defaults to "email_verify" for backward compat with any existing rows.
+  type       String   @default("email_verify")
 
   @@unique([identifier, token])
 }

@@ -230,6 +230,7 @@ const CREATE_TABLES_SQL = [
     \`credits\` INT NOT NULL DEFAULT 3,
     \`emailVerified\` DATETIME(3) NULL,
     \`image\` TEXT NULL,
+    \`sessionVersion\` INT NOT NULL DEFAULT 0,
     \`createdAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     \`updatedAt\` DATETIME(3) NOT NULL,
     UNIQUE INDEX \`User_email_key\`(\`email\`),
@@ -239,6 +240,9 @@ const CREATE_TABLES_SQL = [
 
   // Add 'credits' column to existing User table (idempotent — fails silently if exists)
   `ALTER TABLE \`User\` ADD COLUMN IF NOT EXISTS \`credits\` INT NOT NULL DEFAULT 3`,
+
+  // Auth security: sessionVersion for JWT invalidation after password reset
+  `ALTER TABLE \`User\` ADD COLUMN IF NOT EXISTS \`sessionVersion\` INT NOT NULL DEFAULT 0`,
 
   `CREATE TABLE IF NOT EXISTS \`Account\` (
     \`id\` VARCHAR(191) NOT NULL,
@@ -274,9 +278,13 @@ const CREATE_TABLES_SQL = [
     \`identifier\` VARCHAR(191) NOT NULL,
     \`token\` VARCHAR(191) NOT NULL,
     \`expires\` DATETIME(3) NOT NULL,
+    \`type\` VARCHAR(50) NOT NULL DEFAULT 'email_verify',
     UNIQUE INDEX \`VerificationToken_token_key\`(\`token\`),
     UNIQUE INDEX \`VerificationToken_identifier_token_key\`(\`identifier\`, \`token\`)
   ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+  // Auth security: add type column to existing VerificationToken table (idempotent)
+  `ALTER TABLE \`VerificationToken\` ADD COLUMN IF NOT EXISTS \`type\` VARCHAR(50) NOT NULL DEFAULT 'email_verify'`,
 
   `CREATE TABLE IF NOT EXISTS \`AIModel\` (
     \`id\` VARCHAR(191) NOT NULL,
