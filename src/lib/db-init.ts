@@ -363,6 +363,8 @@ const CREATE_TABLES_SQL = [
     \`whopPlanId\` VARCHAR(191) NULL,
     \`whopCheckoutUrl\` LONGTEXT NULL,
     \`billingPeriod\` VARCHAR(191) NULL,
+    \`tier\` VARCHAR(50) NULL,
+    \`expiresDays\` INT NULL,
     \`createdAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     \`updatedAt\` DATETIME(3) NOT NULL,
     UNIQUE INDEX \`PricingPlan_slug_key\`(\`slug\`),
@@ -373,8 +375,33 @@ const CREATE_TABLES_SQL = [
   `ALTER TABLE \`PricingPlan\` ADD COLUMN IF NOT EXISTS \`whopPlanId\` VARCHAR(191) NULL`,
   `ALTER TABLE \`PricingPlan\` ADD COLUMN IF NOT EXISTS \`whopCheckoutUrl\` LONGTEXT NULL`,
   `ALTER TABLE \`PricingPlan\` ADD COLUMN IF NOT EXISTS \`billingPeriod\` VARCHAR(191) NULL`,
+  // Phase 1: add tier + expiresDays columns (idempotent — fails silently if exists)
+  `ALTER TABLE \`PricingPlan\` ADD COLUMN IF NOT EXISTS \`tier\` VARCHAR(50) NULL`,
+  `ALTER TABLE \`PricingPlan\` ADD COLUMN IF NOT EXISTS \`expiresDays\` INT NULL`,
   // Migrate existing rows from USD to EUR
   `UPDATE \`PricingPlan\` SET \`currency\` = 'EUR' WHERE \`currency\` = 'USD' OR \`currency\` IS NULL`,
+
+  // === Phase 1: CreditLot table (per-source credit buckets with optional expiration) ===
+  // Each purchase creates a CreditLot row. The fusion API consumes lots in FIFO
+  // order: expiring lots first (expiresAt ASC, NULLs last), then non-expiring
+  // lots (createdAt ASC). User.credits is the cache of SUM(remaining).
+  `CREATE TABLE IF NOT EXISTS \`CreditLot\` (
+    \`id\` VARCHAR(191) NOT NULL,
+    \`userId\` VARCHAR(191) NOT NULL,
+    \`source\` VARCHAR(50) NOT NULL,
+    \`remaining\` INT NOT NULL,
+    \`initial\` INT NOT NULL,
+    \`expiresAt\` DATETIME(3) NULL,
+    \`whopPaymentId\` VARCHAR(191) NULL,
+    \`pricingPlanSlug\` VARCHAR(191) NULL,
+    \`createdAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    \`updatedAt\` DATETIME(3) NOT NULL,
+    INDEX \`CreditLot_userId_idx\`(\`userId\`),
+    INDEX \`CreditLot_expiresAt_idx\`(\`expiresAt\`),
+    INDEX \`CreditLot_source_idx\`(\`source\`),
+    PRIMARY KEY (\`id\`),
+    CONSTRAINT \`CreditLot_userId_fkey\` FOREIGN KEY (\`userId\`) REFERENCES \`User\`(\`id\`) ON DELETE CASCADE
+  ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
 
   `CREATE TABLE IF NOT EXISTS \`ContactMessage\` (
     \`id\` VARCHAR(191) NOT NULL,
@@ -603,6 +630,56 @@ async function doInit(): Promise<void> {
           data: { enabled: false, updatedAt: new Date() },
         }).catch(() => {});
         console.log(`[db-init] ✓ Disabled legacy plan: ${slug} (replaced by sub_${slug})`);
+      }
+    }
+
+    // === Phase 1: disable old recharge plans (replaced by 8 new one_time plans) ===
+    // These 5 old recharge slugs are kept in DB for historical reference
+    // (WhopPayment.planId FK + CreditTransaction.reference audit), but they
+    // are disabled so they don't appear on /pricing and can't be purchased.
+    //
+    // For recharge_mini specifically: the Whop plan (plan_p5X53jTXOIYqp) was
+    // permanently deleted. We null out whopPlanId + whopCheckoutUrl so that
+    // even if someone calls /api/checkout/whop with planSlug=recharge_mini
+    // directly, the checkout API will reject with 400 "This plan does not
+    // support online payment yet" (because plan.whopPlanId is null).
+    //
+    // For the other 4: the Whop plans are archived (not deleted), so we keep
+    // their whopPlanId for audit but set enabled=0 to prevent new purchases.
+    // No historical data is deleted — only enabled flag + (for mini) whopPlanId.
+    const oldRechargeSlugs = [
+      "recharge_mini",      // Whop plan DELETED — must prevent any checkout
+      "recharge_small",     // Whop plan archived — replaced by recharge_small_normal + _subscriber
+      "recharge_medium",    // Whop plan archived — replaced by recharge_medium_normal + _subscriber
+      "recharge_large",     // Whop plan archived — replaced by recharge_large_normal + _subscriber
+      "recharge_xl",        // Whop plan archived — replaced by recharge_xl_normal + _subscriber
+    ];
+    for (const slug of oldRechargeSlugs) {
+      const old = await db.pricingPlan.findUnique({ where: { slug } }).catch(() => null);
+      if (!old) continue;
+
+      const updates: any = { enabled: false, updatedAt: new Date() };
+      let extraLog = "";
+
+      // For recharge_mini: null out whopPlanId to prevent checkout
+      // (the Whop plan was permanently deleted — any checkout attempt would 404)
+      if (slug === "recharge_mini" && old.whopPlanId) {
+        updates.whopPlanId = null;
+        updates.whopCheckoutUrl = null;
+        extraLog = " (whopPlanId nulled — Whop plan was deleted)";
+      }
+
+      // Only update if something actually changed
+      const needsUpdate =
+        old.enabled !== false ||
+        (slug === "recharge_mini" && old.whopPlanId !== null);
+
+      if (needsUpdate) {
+        await db.pricingPlan.update({
+          where: { id: old.id },
+          data: updates,
+        }).catch(() => {});
+        console.log(`[db-init] ✓ Phase 1: disabled old recharge: ${slug}${extraLog}`);
       }
     }
 
