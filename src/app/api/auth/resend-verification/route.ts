@@ -85,20 +85,20 @@ export const POST = apiRoute(async (req: NextRequest) => {
   const locale = acceptLang.startsWith("es") ? "es" : acceptLang.startsWith("en") ? "en" : "fr";
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://allcombiner.com";
-  const verifyUrl = `${appUrl}/api/auth/verify-email?token=${rawToken}`;
+  const verifyUrl = `${appUrl}/${locale}/verify-email?token=${rawToken}`;
   const emailContent = buildVerificationEmail(locale, verifyUrl);
 
-  const sent = await sendEmail({
+  const emailResult = await sendEmail({
     to: user.email,
     subject: emailContent.subject,
     html: emailContent.html,
     text: emailContent.text,
   });
 
-  if (!sent) {
+  if (!emailResult.sent) {
     // Email failed to send, but we don't want to leak this to the user
     // Return success anyway — the token was created, they can try again later
-    console.error("[resend-verification] Email send failed for user:", userId);
+    console.error("[resend-verification] Email send failed for user:", userId, emailResult.error);
   }
 
   return NextResponse.json({ ok: true, message: "sent" });

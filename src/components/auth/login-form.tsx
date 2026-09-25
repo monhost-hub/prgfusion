@@ -97,6 +97,11 @@ export function LoginForm() {
           <div className="space-y-1.5">
             <Label htmlFor="password">{t("password")}</Label>
             <Input id="password" name="password" type="password" required autoComplete="current-password" />
+            <div className="text-right">
+              <a href={tPath("/forgot-password")} className="text-xs text-primary hover:underline">
+                {t("forgotPassword")}
+              </a>
+            </div>
           </div>
           <Button type="submit" disabled={loading} className="w-full bg-brand-gradient text-white hover:opacity-90">
             {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogIn className="mr-2 h-4 w-4" />}

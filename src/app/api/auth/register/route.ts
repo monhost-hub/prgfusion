@@ -91,21 +91,26 @@ export const POST = apiRoute(async (req: NextRequest) => {
 
   // Generate verification token + send email
   // Failures here are non-fatal — user can still log in and request resend
+  let emailSent = false;
   try {
     const rawToken = await createEmailVerificationToken(email);
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://allcombiner.com";
-    const verifyUrl = `${appUrl}/api/auth/verify-email?token=${rawToken}`;
+    const verifyUrl = `${appUrl}/${locale}/verify-email?token=${rawToken}`;
     const emailContent = buildVerificationEmail(locale, verifyUrl);
-    await sendEmail({
+    const result = await sendEmail({
       to: email,
       subject: emailContent.subject,
       html: emailContent.html,
       text: emailContent.text,
     });
+    emailSent = result.sent;
+    if (!result.sent) {
+      console.error("[register] Email verification send failed:", result.error);
+    }
   } catch (err) {
     // Log the error but don't fail the registration — user can resend later
     console.error("[register] Email verification send failed:", err instanceof Error ? err.message : "unknown");
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, emailSent });
 });

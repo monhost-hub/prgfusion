@@ -38,6 +38,12 @@ export interface SendEmailParams {
   text?: string;
 }
 
+export interface SendEmailResult {
+  sent: boolean;
+  devMode: boolean;
+  error?: string;
+}
+
 /**
  * Sends an email via Resend.
  *
@@ -47,7 +53,7 @@ export interface SendEmailParams {
  * Returns true if the email was sent (or logged in dev), false on error.
  * Never throws — the caller decides whether to treat email failure as fatal.
  */
-export async function sendEmail(params: SendEmailParams): Promise<boolean> {
+export async function sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
   const client = getResend();
 
   if (!client) {
@@ -57,7 +63,7 @@ export async function sendEmail(params: SendEmailParams): Promise<boolean> {
     console.log(`[email]   Subject: ${params.subject}`);
     // Log a truncated version of the body — never log tokens or secrets
     console.log(`[email]   Body: ${params.text?.slice(0, 100) ?? "(HTML only)"}...`);
-    return true;
+    return { sent: false, devMode: true, error: "RESEND_API_KEY not configured" };
   }
 
   try {
@@ -71,14 +77,14 @@ export async function sendEmail(params: SendEmailParams): Promise<boolean> {
 
     if (error) {
       console.error("[email] Resend API error:", error.message);
-      return false;
+      return { sent: false, devMode: false, error: error.message };
     }
 
-    return true;
+    return { sent: true, devMode: false };
   } catch (err: any) {
     // Log the error type but never the full error (might contain email body)
     console.error("[email] Send failed:", err?.message ?? "unknown error");
-    return false;
+    return { sent: false, devMode: false, error: err?.message ?? "unknown error" };
   }
 }
 

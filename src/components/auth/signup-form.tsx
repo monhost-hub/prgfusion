@@ -44,6 +44,12 @@ export function SignupForm() {
         toast.error(data?.error || t("errorGeneric"));
         return;
       }
+      // Check whether the verification email was actually sent.
+      // If not, warn the user — they'll need to click "Resend email" from the
+      // dashboard verification banner (separate feature).
+      if (data.emailSent === false) {
+        toast.warning(t("emailNotSent"));
+      }
       // Auto-login
       const r = await signIn("credentials", { email, password, redirect: false });
       if (r?.error) {
@@ -51,6 +57,8 @@ export function SignupForm() {
         toast.error(t("invalidCredentials"));
         return;
       }
+      // Notify the user to check their inbox to activate the account.
+      toast.info(t("checkYourEmail"));
       toast.success(t("welcomeBack", { name: name || email }));
       router.push(tPath("/dashboard"));
       router.refresh();
