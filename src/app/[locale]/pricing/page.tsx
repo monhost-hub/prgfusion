@@ -1,10 +1,20 @@
 import { setRequestLocale, getTranslations } from "next-intl/server";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Check, Sparkles, Zap } from "lucide-react";
+import {
+  Check,
+  Sparkles,
+  Zap,
+  Crown,
+  Tag,
+  TrendingDown,
+  Clock,
+  Infinity as InfinityIcon,
+} from "lucide-react";
 import { db } from "@/lib/db";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import type { Locale } from "@/i18n/routing";
 import { PlanCheckoutButton } from "@/components/pricing/plan-checkout-button";
 
@@ -46,9 +56,96 @@ const FALLBACK_PLANS: Plan[] = [
 ];
 
 /**
- * Pricing page — DB-driven, 2 sections:
+ * RechargePack — Vue fusionnée d'un pack de recharge (normal + abonné).
+ */
+interface RechargePack {
+  name: string; // "Petit" | "Moyen" | "Grand" | "XL"
+  credits: number; // 30 | 75 | 200 | 500
+  normalSlug: string; // "recharge_small_normal"
+  normalPrice: number; // 11.99
+  normalUrl: string; // "https://whop.com/checkout/plan_DPhvShsD3YBfX"
+  subscriberSlug: string; // "recharge_small_subscriber"
+  subscriberPrice: number; // 8.99
+  subscriberUrl: string; // "https://whop.com/checkout/plan_S46OB7PUueJb6"
+  pricePerCreditNormal: number; // normalPrice / credits
+  pricePerCreditSubscriber: number; // subscriberPrice / credits
+  featured: boolean; // true pour Moyen (le plus populaire)
+  savings: number; // montant économisé en € (normalPrice - subscriberPrice)
+  savingsPercent: number; // 25
+}
+
+// Métadonnées statiques associées à chaque clé de pack (slug → infos UI).
+const PACK_META: Record<string, { name: string; credits: number; featured: boolean }> = {
+  small: { name: "Petit", credits: 30, featured: false },
+  medium: { name: "Moyen", credits: 75, featured: true },
+  large: { name: "Grand", credits: 200, featured: false },
+  xl: { name: "XL", credits: 500, featured: false },
+};
+
+/**
+ * groupRechargesIntoPacks — Transforme les 8 plans de recharge (4 packs × 2 tiers)
+ * en 4 packs fusionnés, prêts à être affichés côte à côte.
+ *
+ * Le slug est attendu au format : `recharge_{pack}_{tier}`
+ *   - pack : small | medium | large | xl
+ *   - tier : normal | subscriber
+ */
+function groupRechargesIntoPacks(recharges: Plan[]): RechargePack[] {
+  const byPack: Record<string, { normal?: Plan; subscriber?: Plan }> = {};
+
+  for (const r of recharges) {
+    const parts = r.slug.split("_"); // ["recharge", "small", "normal"]
+    if (parts.length < 3 || parts[0] !== "recharge") continue;
+    const pack = parts[1]; // "small" | "medium" | "large" | "xl"
+    const tier = parts.slice(2).join("_"); // "normal" | "subscriber"
+
+    if (!byPack[pack]) byPack[pack] = {};
+    if (tier === "normal") byPack[pack].normal = r;
+    else if (tier === "subscriber") byPack[pack].subscriber = r;
+  }
+
+  const packs: RechargePack[] = [];
+  for (const [packKey, tiers] of Object.entries(byPack)) {
+    const normal = tiers.normal;
+    const subscriber = tiers.subscriber;
+    if (!normal || !subscriber) continue;
+
+    const meta = PACK_META[packKey];
+    if (!meta) continue;
+
+    const normalPrice = normal.priceMonthly;
+    const subscriberPrice = subscriber.priceMonthly;
+    const savings = Math.round((normalPrice - subscriberPrice) * 100) / 100;
+    const savingsPercent =
+      normalPrice > 0 ? Math.round((savings / normalPrice) * 100) : 0;
+
+    packs.push({
+      name: meta.name,
+      credits: meta.credits,
+      normalSlug: normal.slug,
+      normalPrice,
+      normalUrl: normal.whopCheckoutUrl ?? "",
+      subscriberSlug: subscriber.slug,
+      subscriberPrice,
+      subscriberUrl: subscriber.whopCheckoutUrl ?? "",
+      pricePerCreditNormal: meta.credits > 0 ? normalPrice / meta.credits : 0,
+      pricePerCreditSubscriber: meta.credits > 0 ? subscriberPrice / meta.credits : 0,
+      featured: meta.featured,
+      savings,
+      savingsPercent,
+    });
+  }
+
+  // Tri ascendant par nombre de crédits (Petit → XL).
+  packs.sort((a, b) => a.credits - b.credits);
+  return packs;
+}
+
+/**
+ * Pricing page — DB-driven, 3 sections:
  *  1. Abonnements (slug starts with "sub_")
- *  2. Recharges (slug starts with "recharge_")
+ *  2. Recharges refondues — 4 packs fusionnés (normal + abonné côte à côte)
+ *  3. Test $1
  *
  * Falls back to hardcoded defaults if the DB is not ready (cold start).
  */
@@ -90,6 +187,7 @@ export default async function Page({
 
   const subscriptions = plans.filter((p) => p.slug.startsWith("sub_"));
   const recharges = plans.filter((p) => p.slug.startsWith("recharge_"));
+  const packs = groupRechargesIntoPacks(recharges);
 
   function nameOf(plan: Plan): string {
     try {
@@ -117,6 +215,10 @@ export default async function Page({
           <p className="mt-2 text-sm text-muted-foreground">
             Engage-toi pour 1 à 12 mois et profite de crédits à prix réduit.
           </p>
+          <p className="mt-1 text-sm font-medium text-primary inline-flex items-center gap-1.5">
+            <Crown className="h-4 w-4" />
+            Les abonnés débloquent les recharges à prix réduit (−25%)
+          </p>
         </div>
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-5 max-w-7xl mx-auto">
@@ -133,7 +235,7 @@ export default async function Page({
         </div>
       </section>
 
-      {/* === SECTION 2 : RECHARGES === */}
+      {/* === SECTION 2 : RECHARGES REFONDUES === */}
       <section>
         <div className="text-center mb-8">
           <h2 className="text-2xl md:text-3xl font-bold flex items-center justify-center gap-2">
@@ -145,17 +247,20 @@ export default async function Page({
           </p>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-5 max-w-7xl mx-auto">
-          {recharges.map((plan) => (
-            <PlanCard
-              key={plan.id}
-              plan={plan}
-              name={nameOf(plan)}
-              cta={t("cta", { plan: nameOf(plan) })}
-              locale={locale}
-              featured={plan.featured}
-              isRecharge
-            />
+        {/* Bandeau marketing — avantage abonné */}
+        <div className="max-w-4xl mx-auto mb-8 rounded-xl border-2 border-primary/30 bg-primary/5 px-5 py-4 flex items-center gap-3">
+          <div className="flex-shrink-0 w-10 h-10 rounded-full bg-brand-gradient flex items-center justify-center text-white shadow-md">
+            <Sparkles className="h-5 w-5" />
+          </div>
+          <p className="text-sm md:text-base text-foreground leading-snug">
+            <span className="font-semibold">Les abonnés profitent de 25% sur toutes les recharges.</span>{" "}
+            Abonne-toi pour débloquer les prix réduits + des crédits sans expiration.
+          </p>
+        </div>
+
+        <div className="grid gap-6 md:grid-cols-2 max-w-5xl mx-auto">
+          {packs.map((pack) => (
+            <RechargePackCard key={pack.normalSlug} pack={pack} />
           ))}
         </div>
       </section>
@@ -177,20 +282,22 @@ export default async function Page({
   );
 }
 
+/* ============================================================================
+ * Sous-composants
+ * ========================================================================= */
+
 function PlanCard({
   plan,
   name,
   cta,
   locale,
   featured = false,
-  isRecharge = false,
 }: {
   plan: Plan;
   name: string;
   cta: string;
   locale: string;
   featured?: boolean;
-  isRecharge?: boolean;
 }) {
   const isFree = plan.slug === "sub_free";
   const pricePerCredit = plan.credits > 0 ? plan.priceMonthly / plan.credits : 0;
@@ -210,24 +317,22 @@ function PlanCard({
         </span>
       )}
       <CardContent className="p-5 flex flex-col h-full">
-        {/* === Titre du pack — plus grand, plus visible === */}
+        {/* === Titre du plan === */}
         <h3 className={`font-bold text-lg tracking-tight ${featured ? "text-primary" : "text-foreground"}`}>
           {name}
         </h3>
 
-        {/* === Description courte — reste discrète === */}
+        {/* === Description courte === */}
         <p className="mt-1.5 text-xs text-muted-foreground min-h-[2.5rem] leading-tight">
           {plan.description}
         </p>
 
-        {/* === Prix — élément le plus visible === */}
+        {/* === Prix === */}
         <div className="mt-3 flex items-baseline gap-1">
           <span className="text-3xl font-extrabold text-foreground">
             €{plan.priceMonthly.toFixed(2)}
           </span>
-          {isRecharge ? (
-            <span className="text-xs text-muted-foreground">une fois</span>
-          ) : isFree ? (
+          {isFree ? (
             <span className="text-xs text-muted-foreground">pour toujours</span>
           ) : (
             <span className="text-xs text-muted-foreground">/mois</span>
@@ -237,8 +342,16 @@ function PlanCard({
         {/* === Nombre de crédits === */}
         <div className="mt-2 inline-flex items-center gap-1.5 self-start rounded-full bg-primary/10 text-primary px-2.5 py-1 text-xs font-medium border border-primary/20">
           <Check className="h-3 w-3" />
-          {plan.credits} crédits
+          {isFree ? `${plan.credits} crédits` : `${plan.credits} crédits/mois`}
         </div>
+
+        {/* === Mention expiration === */}
+        {!isFree && (
+          <p className="mt-1.5 inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+            <Clock className="h-3 w-3" />
+            expirent en 30 jours
+          </p>
+        )}
 
         {/* === Prix par crédit === */}
         {!isFree && (
@@ -247,7 +360,7 @@ function PlanCard({
           </p>
         )}
 
-        {/* === Séparateur === */}
+        {/* === CTA === */}
         <div className="mt-4 pt-4 border-t border-border/40">
           {isFree ? (
             <Button
@@ -259,14 +372,12 @@ function PlanCard({
               <Link href={`/${locale}/signup`}>{cta}</Link>
             </Button>
           ) : plan.whopPlanId ? (
-            // ✅ Plan avec Whop → checkout via API serveur (metadata.userId)
             <PlanCheckoutButton
               planSlug={plan.slug}
               label={cta}
               featured={featured}
             />
           ) : (
-            // Plan sans Whop → contact (bouton visible)
             <Button
               asChild
               size="sm"
@@ -280,6 +391,134 @@ function PlanCard({
               <Link href={`/${locale}/contact`}>{cta}</Link>
             </Button>
           )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * RechargePackCard — Carte fusionnée d'un pack de recharge.
+ *
+ * Affiche côte à côte le tarif normal (visiteur) et le tarif abonné (−25%),
+ * avec un bouton d'achat par variante. Le client choisit selon son statut.
+ */
+function RechargePackCard({ pack }: { pack: RechargePack }) {
+  return (
+    <Card
+      className={
+        pack.featured
+          ? "!bg-primary/10 !border-2 !border-primary/50 !shadow-glow relative backdrop-blur-md transition-all duration-200"
+          : "!bg-card !border !border-border/60 !shadow-md hover:!border-primary/30 transition-all duration-200 relative"
+      }
+    >
+      {pack.featured && (
+        <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-brand-gradient text-white text-xs px-3 py-1 font-semibold inline-flex items-center gap-1 z-10 shadow-md">
+          <Sparkles className="h-3 w-3" />
+          Populaire
+        </span>
+      )}
+      <CardContent className="p-5 flex flex-col h-full">
+        {/* === En-tête : nom du pack + badges === */}
+        <div className="flex items-center justify-between gap-2">
+          <h3
+            className={`font-bold text-xl tracking-tight ${
+              pack.featured ? "text-primary" : "text-foreground"
+            }`}
+          >
+            Pack {pack.name}
+          </h3>
+          {pack.featured && (
+            <Badge className="bg-brand-gradient text-white border-transparent">
+              <Sparkles className="h-3 w-3" />
+              Populaire
+            </Badge>
+          )}
+        </div>
+
+        {/* === Crédits — gros chiffre === */}
+        <div className="mt-3 flex items-center gap-2">
+          <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-amber-500/15 border border-amber-500/30">
+            <Zap className="h-5 w-5 text-amber-500" />
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-3xl font-extrabold text-foreground">
+              {pack.credits}
+            </span>
+            <span className="text-sm text-muted-foreground font-medium">
+              crédits
+            </span>
+          </div>
+        </div>
+
+        {/* === Double prix : Normal (gauche) + Abonné (droite) === */}
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          {/* --- Bloc Normal --- */}
+          <div className="rounded-lg border border-border/60 bg-muted/30 p-3 flex flex-col">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <Tag className="h-3 w-3" />
+              Normal
+            </div>
+            <div className="mt-1.5 text-2xl font-extrabold text-foreground leading-none">
+              €{pack.normalPrice.toFixed(2)}
+            </div>
+            <div className="mt-1.5 inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+              <InfinityIcon className="h-3 w-3 text-emerald-500" />
+              Sans expiration
+            </div>
+            <div className="mt-0.5 text-[10px] text-muted-foreground">
+              €{pack.pricePerCreditNormal.toFixed(3)} / crédit
+            </div>
+            <div className="mt-auto pt-3">
+              <PlanCheckoutButton
+                planSlug={pack.normalSlug}
+                label="Acheter"
+                featured={false}
+              />
+            </div>
+          </div>
+
+          {/* --- Bloc Abonné (mis en avant) --- */}
+          <div className="rounded-lg border-2 border-primary/50 bg-primary/10 p-3 flex flex-col relative">
+            <div className="absolute -top-2.5 right-2">
+              <Badge className="bg-brand-gradient text-white border-transparent text-[10px] px-2 py-0.5 shadow-md">
+                <TrendingDown className="h-2.5 w-2.5" />
+                −{pack.savingsPercent}%
+              </Badge>
+            </div>
+            <div className="flex items-center gap-1.5 text-xs font-medium text-primary">
+              <Crown className="h-3 w-3" />
+              Abonné
+            </div>
+            <div className="mt-1.5 flex items-baseline gap-1.5 leading-none">
+              <span className="text-xs text-muted-foreground line-through">
+                €{pack.normalPrice.toFixed(2)}
+              </span>
+              <span className="text-2xl font-extrabold text-primary">
+                €{pack.subscriberPrice.toFixed(2)}
+              </span>
+            </div>
+            <div className="mt-1.5 inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+              <Clock className="h-3 w-3" />
+              Expire en 30 jours
+            </div>
+            <div className="mt-0.5 text-[10px] text-muted-foreground">
+              €{pack.pricePerCreditSubscriber.toFixed(3)} / crédit
+            </div>
+            <div className="mt-auto pt-3">
+              <PlanCheckoutButton
+                planSlug={pack.subscriberSlug}
+                label="Acheter (abonné)"
+                featured={true}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* === Message marketing : économie réalisée === */}
+        <div className="mt-4 rounded-md bg-primary/5 border border-primary/20 px-3 py-2 text-xs text-center text-primary font-medium inline-flex items-center justify-center gap-1.5">
+          <TrendingDown className="h-3.5 w-3.5" />
+          Abonne-toi et économise €{pack.savings.toFixed(2)} sur ce pack
         </div>
       </CardContent>
     </Card>
