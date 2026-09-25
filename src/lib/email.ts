@@ -140,3 +140,66 @@ export function buildVerificationEmail(
 
   return { subject, html, text };
 }
+
+/**
+ * Generates a password reset email in the specified locale.
+ * Returns { subject, html, text } ready to be passed to sendEmail().
+ *
+ * The reset link points to the public AllCombiner reset page with the token
+ * as a query parameter — NEVER log this token.
+ */
+export function buildPasswordResetEmail(
+  locale: string,
+  resetUrl: string
+): { subject: string; html: string; text: string } {
+  const isFR = locale === "fr";
+  const isES = locale === "es";
+
+  const subject = isFR
+    ? "Réinitialisez votre mot de passe — AllCombiner"
+    : isES
+      ? "Restablece tu contraseña — AllCombiner"
+      : "Reset your password — AllCombiner";
+
+  const title = isFR
+    ? "Réinitialisez votre mot de passe"
+    : isES
+      ? "Restablece tu contraseña"
+      : "Reset your password";
+
+  const body = isFR
+    ? "Vous avez demandé la réinitialisation de votre mot de passe AllCombiner. Cliquez sur le bouton ci-dessous pour choisir un nouveau mot de passe. Ce lien expire dans 1 heure."
+    : isES
+      ? "Has solicitado restablecer tu contraseña de AllCombiner. Haz clic en el botón de abajo para elegir una nueva contraseña. Este enlace expira en 1 hora."
+      : "You requested a password reset for your AllCombiner account. Click the button below to choose a new password. This link expires in 1 hour.";
+
+  const buttonText = isFR
+    ? "Réinitialiser mon mot de passe"
+    : isES
+      ? "Restablecer mi contraseña"
+      : "Reset my password";
+
+  const footer = isFR
+    ? "Si vous n'avez pas demandé cette réinitialisation, vous pouvez ignorer cet email en toute sécurité."
+    : isES
+      ? "Si no solicitaste este restablecimiento, puedes ignorar este correo de forma segura."
+      : "If you didn't request this reset, you can safely ignore this email.";
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+        <h1 style="color: #6366f1; font-size: 24px; margin-bottom: 16px;">${title}</h1>
+        <p style="color: #4b5563; font-size: 15px; line-height: 1.6; margin-bottom: 24px;">${body}</p>
+        <a href="${resetUrl}" style="display: inline-block; background: #6366f1; color: white; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 15px;">${buttonText}</a>
+        <p style="color: #9ca3af; font-size: 13px; margin-top: 32px; line-height: 1.5;">${footer}</p>
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
+        <p style="color: #9ca3af; font-size: 12px;">AllCombiner — Fusion d'images par IA</p>
+      </body>
+    </html>
+  `;
+
+  const text = `${title}\n\n${body}\n\n${resetUrl}\n\n${footer}\n\nAllCombiner`;
+
+  return { subject, html, text };
+}
