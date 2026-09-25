@@ -181,7 +181,9 @@ export default async function Page({
     console.error("[pricing] DB error, using fallback plans:", err);
   }
 
-  const subscriptions = plans.filter((p) => p.slug.startsWith("sub_"));
+  const subscriptions = plans.filter(
+    (p) => p.slug.startsWith("sub_") && p.slug !== "sub_free"
+  );
   const recharges = plans.filter((p) => p.slug.startsWith("recharge_"));
   const offers = groupRechargesIntoOffers(recharges);
   const subscriber = await isUserSubscriber();
@@ -226,7 +228,7 @@ export default async function Page({
           </p>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-5 max-w-7xl mx-auto">
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 max-w-6xl mx-auto">
           {subscriptions.map((plan) => (
             <PlanCard
               key={plan.id}
