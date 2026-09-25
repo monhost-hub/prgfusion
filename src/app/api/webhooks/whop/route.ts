@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { verifyWhopWebhook, isWhopConfigured, isTestPlan, getTestPlanCredits } from "@/lib/whop";
+import { sendEmail } from "@/lib/email";
+import { buildCreditPurchaseEmail, buildSubscriptionActivatedEmail } from "@/lib/email-templates";
 
 /**
  * POST /api/webhooks/whop
@@ -349,6 +351,64 @@ export async function POST(req: NextRequest) {
     console.log(
       `[whop-webhook] ✓ ${eventType} → user ${userId} +${creditsToGrant} credits (plan: ${plan.slug})`
     );
+
+    // === Send transactional email AFTER successful credit grant ===
+    // Anti-doublon: this code only runs after the transaction succeeded.
+    // If the same webhook is replayed, the transaction throws DUPLICATE_PAYMENT
+    // or Unique constraint → caught below → returns "already processed" →
+    // this code is never reached again.
+    // Email failure is non-fatal: log error but don't fail the webhook.
+    try {
+      const locale = "fr"; // Default — could be enhanced with user locale preference
+      const isTest = isTestPlan(whopPlanId || "");
+      const isSubscription = plan.tier === "subscription" || plan.slug?.startsWith("sub_");
+
+      if (isSubscription && !isTest) {
+        // Subscription activated — send subscription email
+        const startDate = new Date();
+        const endDate = new Date(startDate.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 days
+        const content = buildSubscriptionActivatedEmail(locale, {
+          userName: result.updatedUser.name || "",
+          plan: plan.slug,
+          credits: creditsToGrant,
+          startDate,
+          endDate,
+          renewalPrice: plan.priceMonthly || 0,
+          currency: currency || "EUR",
+          autoRenew: true, // Whop subscriptions auto-renew by default
+        });
+        await sendEmail({
+          to: result.updatedUser.email,
+          subject: content.subject,
+          html: content.html,
+          text: content.text,
+        });
+      } else if (!isTest) {
+        // Credit purchase (recharge) — send credit purchase email
+        const expiresAt = plan.expiresDays
+          ? new Date(Date.now() + plan.expiresDays * 24 * 60 * 60 * 1000)
+          : null;
+        const content = buildCreditPurchaseEmail(locale, {
+          userName: result.updatedUser.name || "",
+          credits: creditsToGrant,
+          amount: amount ?? plan.priceMonthly,
+          currency: currency || "EUR",
+          creditType: plan.tier || plan.slug || "recharge",
+          expiresAt,
+        });
+        await sendEmail({
+          to: result.updatedUser.email,
+          subject: content.subject,
+          html: content.html,
+          text: content.text,
+        });
+      }
+      // Test plan ($1) — no email sent (internal testing only)
+    } catch (emailErr) {
+      // Log error but NEVER fail the webhook — credits are already granted
+      console.error("[whop-webhook] Transactional email send failed:", emailErr instanceof Error ? emailErr.message : "unknown");
+    }
+
     return NextResponse.json({
       ok: true,
       message: "credits granted",

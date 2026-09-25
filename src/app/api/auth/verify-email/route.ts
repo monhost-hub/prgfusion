@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { sendEmail } from "@/lib/email";
+import { buildWelcomeEmail } from "@/lib/email-templates";
 import { createHash } from "node:crypto";
 
 /**
@@ -76,6 +78,24 @@ export async function GET(req: NextRequest) {
     ]);
   } catch {
     return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
+  }
+
+  // Send welcome email — only on first verification (not on "already" status).
+  // Anti-doublon: this code only runs when user.emailVerified was null before
+  // the transaction above. If the user re-verifies, the "already" branch
+  // returns early above and never reaches this code.
+  try {
+    const locale = "fr"; // Default to FR — could be enhanced with user locale preference
+    const content = buildWelcomeEmail(locale, { userName: user.name || "" });
+    await sendEmail({
+      to: user.email,
+      subject: content.subject,
+      html: content.html,
+      text: content.text,
+    });
+  } catch (err) {
+    // Email failure is non-fatal — the email is verified, that's what matters
+    console.error("[verify-email] Welcome email send failed:", err instanceof Error ? err.message : "unknown");
   }
 
   return NextResponse.json({ ok: true, status: "verified" });
