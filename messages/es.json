@@ -276,7 +276,20 @@
     "verifyRequiredDescRecharge": "Debes verificar tu correo antes de poder comprar créditos.",
     "verifyRequiredDescSubscription": "Debes verificar tu correo antes de poder suscribirte.",
     "resendVerificationSent": "El correo de verificación ha sido reenviado. Revisa tu bandeja de entrada.",
-    "resendVerificationError": "Error al enviar. Inténtalo más tarde."
+    "resendVerificationError": "Error al enviar. Inténtalo más tarde.",
+    "profileTitle": "Mi perfil",
+    "emailVerified": "Verificado",
+    "emailNotVerified": "No verificado",
+    "changePasswordTitle": "Seguridad",
+    "changePassword": "Cambiar contraseña",
+    "currentPassword": "Contraseña actual",
+    "currentPasswordError": "La contraseña actual es incorrecta.",
+    "passwordTooShort": "La nueva contraseña debe tener al menos 8 caracteres.",
+    "passwordSameError": "La nueva contraseña debe ser diferente de la actual.",
+    "passwordChangedSuccess": "Contraseña cambiada. Se cerrará tu sesión.",
+    "changing": "Cambiando…",
+    "cancel": "Cancelar",
+    "nameNotSet": "No establecido"
   },
   "Dashboard": {
     "title": "Panel",

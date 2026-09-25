@@ -276,7 +276,20 @@
     "verifyRequiredDescRecharge": "You need to verify your email address before purchasing credits.",
     "verifyRequiredDescSubscription": "You need to verify your email address before subscribing.",
     "resendVerificationSent": "Verification email has been resent. Check your inbox.",
-    "resendVerificationError": "Error sending email. Please try again later."
+    "resendVerificationError": "Error sending email. Please try again later.",
+    "profileTitle": "My profile",
+    "emailVerified": "Verified",
+    "emailNotVerified": "Not verified",
+    "changePasswordTitle": "Security",
+    "changePassword": "Change password",
+    "currentPassword": "Current password",
+    "currentPasswordError": "Current password is incorrect.",
+    "passwordTooShort": "New password must be at least 8 characters.",
+    "passwordSameError": "New password must be different from current.",
+    "passwordChangedSuccess": "Password changed. You will be logged out.",
+    "changing": "Updating…",
+    "cancel": "Cancel",
+    "nameNotSet": "Not set"
   },
   "Dashboard": {
     "title": "Dashboard",
