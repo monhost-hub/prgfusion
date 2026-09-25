@@ -270,7 +270,13 @@
     "goToLogin": "Go to login",
     "resendVerification": "Resend email",
     "checkYourEmail": "Check your email to activate your account.",
-    "emailNotSent": "Email not sent. Click Resend."
+    "emailNotSent": "Email not sent. Click Resend.",
+    "verifyRequiredRecharge": "Email verification required",
+    "verifyRequiredSubscription": "Email verification required",
+    "verifyRequiredDescRecharge": "You need to verify your email address before purchasing credits.",
+    "verifyRequiredDescSubscription": "You need to verify your email address before subscribing.",
+    "resendVerificationSent": "Verification email has been resent. Check your inbox.",
+    "resendVerificationError": "Error sending email. Please try again later."
   },
   "Dashboard": {
     "title": "Dashboard",

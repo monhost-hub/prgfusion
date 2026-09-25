@@ -270,7 +270,13 @@
     "goToLogin": "Ir a inicio de sesión",
     "resendVerification": "Reenviar correo",
     "checkYourEmail": "Revisa tu correo para activar tu cuenta.",
-    "emailNotSent": "Correo no enviado. Haz clic en Reenviar."
+    "emailNotSent": "Correo no enviado. Haz clic en Reenviar.",
+    "verifyRequiredRecharge": "Verificación de correo requerida",
+    "verifyRequiredSubscription": "Verificación de correo requerida",
+    "verifyRequiredDescRecharge": "Debes verificar tu correo antes de poder comprar créditos.",
+    "verifyRequiredDescSubscription": "Debes verificar tu correo antes de poder suscribirte.",
+    "resendVerificationSent": "El correo de verificación ha sido reenviado. Revisa tu bandeja de entrada.",
+    "resendVerificationError": "Error al enviar. Inténtalo más tarde."
   },
   "Dashboard": {
     "title": "Panel",

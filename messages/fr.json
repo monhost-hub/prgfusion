@@ -270,7 +270,13 @@
     "goToLogin": "Aller à la connexion",
     "resendVerification": "Renvoyer l'email",
     "checkYourEmail": "Vérifiez votre email pour activer votre compte.",
-    "emailNotSent": "Email non envoyé. Cliquez sur Renvoyer l'email."
+    "emailNotSent": "Email non envoyé. Cliquez sur Renvoyer l'email.",
+    "verifyRequiredRecharge": "Vérification d'email requise",
+    "verifyRequiredSubscription": "Vérification d'email requise",
+    "verifyRequiredDescRecharge": "Vous devez vérifier votre adresse email avant de pouvoir acheter des crédits.",
+    "verifyRequiredDescSubscription": "Vous devez vérifier votre adresse email avant de pouvoir souscrire à un abonnement.",
+    "resendVerificationSent": "L'email de vérification a été renvoyé. Vérifiez votre boîte de réception.",
+    "resendVerificationError": "Erreur lors de l'envoi. Réessayez plus tard."
   },
   "Dashboard": {
     "title": "Tableau de bord",
