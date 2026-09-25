@@ -31,6 +31,19 @@ export const POST = apiRoute(async (req: NextRequest) => {
   const session = await requireAuth();
   const userId = session.user!.id!;
 
+  // 1b. Email verification gate — block checkout if email is not verified.
+  //     This prevents payments from being attributed to unverified accounts.
+  //     The webhook still processes any valid payment that slips through
+  //     (e.g. user verifies email after checkout but before webhook arrives).
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { emailVerified: true },
+  }).catch(() => null);
+
+  if (!user || !user.emailVerified) {
+    throw new HttpError(403, JSON.stringify({ code: "EMAIL_NOT_VERIFIED" }));
+  }
+
   // 2. Check Whop is configured
   if (!isWhopConfigured()) {
     throw new HttpError(503, `Payment system is not configured. Please contact support.`);
