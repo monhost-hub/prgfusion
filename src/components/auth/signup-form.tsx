@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { signIn } from "next-auth/react";
+import { signIn, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
@@ -50,6 +50,11 @@ export function SignupForm() {
       if (data.emailSent === false) {
         toast.warning(t("emailNotSent"));
       }
+      // Best-effort: invalidate any pre-existing session before the auto-login,
+      // so a stale admin cookie can't survive the signup.
+      try {
+        await signOut({ redirect: false });
+      } catch {}
       // Auto-login
       const r = await signIn("credentials", { email, password, redirect: false });
       if (r?.error) {
