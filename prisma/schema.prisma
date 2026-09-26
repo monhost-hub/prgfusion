@@ -49,6 +49,7 @@ model User {
   creditTxns    CreditTransaction[]
   creditLots    CreditLot[]
   subscriptions UserSubscription[]
+  emailNotifications EmailNotification[]
 
   @@index([role])
 }
@@ -288,6 +289,43 @@ model UserSubscription {
 
   @@index([userId])
   @@index([status])
+}
+
+// ============================================================================
+// EMAIL NOTIFICATIONS (Phase D — idempotence log for transactional emails)
+// ============================================================================
+// One row per email actually sent. The UNIQUE constraint on
+// (userId, notificationType, periodKey) guarantees that re-running the cron
+// or re-evaluating the trigger will never send the same notification twice
+// for the same period/subscription — the DB rejects the duplicate insert
+// and the helper returns { alreadySent: true } without calling Resend.
+//
+// periodKey examples:
+//   low_credits       → "low_credits:5:2026-09-26T09"  (threshold + hourly bucket)
+//   sub_reminder      → "sub_reminder:<whopMembershipId>:3"  (membership + days)
+//   sub_reminder      → "sub_reminder:<whopMembershipId>:1"
+//   sub_expired       → "sub_expired:<whopMembershipId>"
+//   post_expiry       → "post_expiry:<whopMembershipId>"
+model EmailNotification {
+  id              String   @id @default(cuid())
+  userId          String
+  // "low_credits" | "sub_reminder" | "sub_expired" | "post_expiry"
+  notificationType String
+  // Idempotence key — combined with userId + notificationType forms the UNIQUE
+  periodKey       String
+  // Status of the send: "sent" (Resend accepted) | "failed" (Resend rejected)
+  status          String   @default("sent")
+  // Optional error message when status = "failed"
+  error           String?
+  sentAt          DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, notificationType, periodKey])
+  @@index([userId])
+  @@index([notificationType])
+  @@index([sentAt])
 }
 
 // ============================================================================

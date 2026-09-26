@@ -431,6 +431,27 @@ const CREATE_TABLES_SQL = [
     CONSTRAINT \`UserSubscription_userId_fkey\` FOREIGN KEY (\`userId\`) REFERENCES \`User\`(\`id\`) ON DELETE CASCADE
   ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
 
+  // === Phase D: EmailNotification table (idempotence log for transactional emails) ===
+  // One row per email actually sent. The UNIQUE constraint on
+  // (userId, notificationType, periodKey) is the anti-doublon mechanism used
+  // by sendTransactionalEmail() — see src/lib/email-transactional.ts.
+  `CREATE TABLE IF NOT EXISTS \`EmailNotification\` (
+    \`id\` VARCHAR(191) NOT NULL,
+    \`userId\` VARCHAR(191) NOT NULL,
+    \`notificationType\` VARCHAR(50) NOT NULL,
+    \`periodKey\` VARCHAR(191) NOT NULL,
+    \`status\` VARCHAR(20) NOT NULL DEFAULT 'sent',
+    \`error\` TEXT NULL,
+    \`sentAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    \`createdAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    UNIQUE INDEX \`EmailNotification_userId_notificationType_periodKey_key\`(\`userId\`, \`notificationType\`, \`periodKey\`),
+    INDEX \`EmailNotification_userId_idx\`(\`userId\`),
+    INDEX \`EmailNotification_notificationType_idx\`(\`notificationType\`),
+    INDEX \`EmailNotification_sentAt_idx\`(\`sentAt\`),
+    PRIMARY KEY (\`id\`),
+    CONSTRAINT \`EmailNotification_userId_fkey\` FOREIGN KEY (\`userId\`) REFERENCES \`User\`(\`id\`) ON DELETE CASCADE
+  ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
   `CREATE TABLE IF NOT EXISTS \`ContactMessage\` (
     \`id\` VARCHAR(191) NOT NULL,
     \`name\` VARCHAR(191) NOT NULL,

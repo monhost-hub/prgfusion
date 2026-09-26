@@ -3,6 +3,8 @@ import { apiRoute, requireAuth, errorResponse, HttpError } from "@/lib/server";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
 import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
+import { sendTransactionalEmail } from "@/lib/email-transactional";
+import { buildLowCreditsEmail } from "@/lib/email-templates";
 
 /**
  * POST /api/fusion
@@ -170,6 +172,26 @@ export const POST = apiRoute(async (req: NextRequest) => {
       },
     }).catch(() => {});
 
+    // 9. Low-credits notification (Phase D)
+    // Triggered AFTER the debit is confirmed (the generation succeeded and the
+    // debit is final). Non-fatal: if Resend or the DB insert fails, we log
+    // and move on — the user's fusion result is already returned.
+    //
+    // Idempotence: the periodKey includes the hourly bucket
+    // "YYYY-MM-DDTHH", so we never send more than 1 low_credits email per
+    // hour per threshold. If the user buys credits and then dips again the
+    // next hour, they'll get another notification (which is the desired
+    // behavior — we don't want to silently hide persistent low balance).
+    try {
+      await maybeNotifyLowCredits(userId, user.credits);
+    } catch (err: any) {
+      // Never break the fusion response because of an email failure
+      console.warn(
+        "[fusion] low_credits notification failed:",
+        err?.message ?? "unknown error"
+      );
+    }
+
     return NextResponse.json({
       generationId: generation.id,
       imageUrl: result.imageUrl,
@@ -237,5 +259,72 @@ function parseDataUrl(s: string): { mime: string; buffer: Buffer } | null {
     return { mime: m[1].toLowerCase(), buffer: Buffer.from(m[2], "base64") };
   } catch {
     return null;
+  }
+}
+
+// ============================================================================
+// Low-credits notification (Phase D)
+// ============================================================================
+// The threshold below which a low-credits email is triggered. Below this
+// balance, the user can still do 1-2 more fusions (depending on the model's
+// creditCost), but they should be nudged to recharge.
+//
+// Tunable — keep as a constant here so it's adjustable in a single place.
+const LOW_CREDITS_THRESHOLD = 5;
+
+/**
+ * Sends a low-credits email if the user's new balance is at or below the
+ * threshold. Idempotent: at most 1 email per (threshold, hourly bucket)
+ * thanks to the EmailNotification UNIQUE constraint.
+ *
+ * Non-fatal: any error (DB, Resend) is logged but never propagated.
+ *
+ * Skips silently if the user has no verified email (we don't notify
+ * unverified accounts — they may not have a real inbox yet).
+ */
+async function maybeNotifyLowCredits(userId: string, newBalance: number): Promise<void> {
+  if (newBalance > LOW_CREDITS_THRESHOLD) return;
+
+  // Look up the user — we need their email + name + verification status
+  let user: { id: string; name: string | null; email: string; emailVerified: Date | null } | null = null;
+  try {
+    user = await db.user.findUnique({
+      where: { id: userId },
+      select: { id: true, name: true, email: true, emailVerified: true },
+    });
+  } catch (err: any) {
+    console.warn("[fusion] low_credits: user lookup failed:", err?.message ?? "unknown");
+    return;
+  }
+  if (!user) return;
+  if (!user.emailVerified) return; // skip unverified emails
+
+  // Build the hourly bucket for the periodKey — e.g. "low_credits:5:2026-09-26T09"
+  // This caps the rate at 1 email/hour/threshold per user.
+  const now = new Date();
+  const hourBucket = now.toISOString().slice(0, 13); // "YYYY-MM-DDTHH"
+  const periodKey = `low_credits:${LOW_CREDITS_THRESHOLD}:${hourBucket}`;
+
+  // Build the email content (FR default — same as webhook convention)
+  const content = buildLowCreditsEmail("fr", {
+    userName: user.name || "",
+    currentCredits: newBalance,
+    threshold: LOW_CREDITS_THRESHOLD,
+  });
+
+  try {
+    await sendTransactionalEmail({
+      userId: user.id,
+      to: user.email,
+      notificationType: "low_credits",
+      periodKey,
+      subject: content.subject,
+      html: content.html,
+      text: content.text,
+    });
+  } catch (err: any) {
+    // Last-resort catch — sendTransactionalEmail already swallows most errors
+    // but we keep this for absolute safety.
+    console.warn("[fusion] low_credits: send failed:", err?.message ?? "unknown");
   }
 }
