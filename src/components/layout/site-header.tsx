@@ -15,7 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { signOut, useSession } from "next-auth/react";
-import { LogOut, LayoutDashboard, Shield, Coins } from "lucide-react";
+import { LogOut, LayoutDashboard, Shield, Coins, User } from "lucide-react";
 import { useEffect } from "react";
 
 export function SiteHeader({
@@ -102,6 +102,11 @@ export function SiteHeader({
                     <LayoutDashboard className="mr-2 h-4 w-4" /> {t("dashboard")}
                   </Link>
                 </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href={tPath("/profile")}>
+                    <User className="mr-2 h-4 w-4" /> {t("profile")}
+                  </Link>
+                </DropdownMenuItem>
                 {session.user.role === "ADMIN" && (
                   <DropdownMenuItem asChild>
                     <Link href={`/${currentLocale}/admin`}>
@@ -167,6 +172,13 @@ export function SiteHeader({
                   className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60"
                 >
                   {t("dashboard")}
+                </Link>
+                <Link
+                  href={tPath("/profile")}
+                  onClick={() => setMobileOpen(false)}
+                  className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                >
+                  {t("profile")}
                 </Link>
                 {session.user.role === "ADMIN" && (
                   <Link
