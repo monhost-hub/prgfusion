@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import {
   CheckCircle2,
   Info,
@@ -13,6 +14,7 @@ import {
   LayoutDashboard,
   LogIn,
   Mail,
+  Send,
 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,26 +24,35 @@ import { useTranslatedPathname } from "@/i18n/routing";
  * VerifyEmailClient
  *
  * Reads `token` from the URL query string, calls the verification API on mount,
- * and renders one of four UI states:
+ * and renders one of five UI states:
  *   - loading   : spinner + "Verifying..."
  *   - verified  : green check + success message + dashboard button
  *   - already   : blue info + "already verified" + dashboard button
- *   - invalid   : red X + "invalid or expired link" + resend button
- *   - expired   : orange clock + "expired link" + resend button
+ *   - no-token  : neutral info + "no token in URL" + resend button (authed) / login button (anon)
+ *   - invalid   : red X + "invalid link" + resend button (authed) / login button (anon)
+ *   - expired   : orange clock + "expired link" + resend button (authed) / login button (anon)
+ *   - sent      : green check + "email sent, check your inbox" + back-to-dashboard (authed only)
+ *
+ * The "Resend email" button now actually calls /api/auth/resend-verification
+ * (instead of redirecting to /login). The backend endpoint requires an
+ * authenticated session — if the user is not logged in, we fall back to
+ * showing a login CTA.
  *
  * Must be wrapped in <Suspense> when used inside a page because it relies on
  * `useSearchParams` (Next.js requires a Suspense boundary for that hook).
  */
 
-type State = "loading" | "verified" | "already" | "invalid" | "expired";
+type State = "loading" | "verified" | "already" | "invalid" | "expired" | "no-token" | "sent";
 
 export function VerifyEmailClient() {
   const t = useTranslations("Auth");
   const tPath = useTranslatedPathname();
   const router = useRouter();
+  const { status } = useSession();
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
-  const [state, setState] = useState<State>(token ? "loading" : "invalid");
+  const [state, setState] = useState<State>(token ? "loading" : "no-token");
+  const [resending, setResending] = useState(false);
 
   useEffect(() => {
     if (!token) return;
@@ -82,6 +93,27 @@ export function VerifyEmailClient() {
       cancelled = true;
     };
   }, [searchParams]);
+
+  async function handleResend() {
+    setResending(true);
+    try {
+      const res = await fetch("/api/auth/resend-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.ok) {
+        setState("sent");
+      }
+    } catch {
+      // Silently ignore — the user can retry via the button below
+    } finally {
+      setResending(false);
+    }
+  }
+
+  // Auth-aware render helpers
+  const isAuthed = status === "authenticated";
 
   return (
     <Card className="glass-card max-w-md mx-auto">
@@ -132,34 +164,116 @@ export function VerifyEmailClient() {
           </>
         )}
 
+        {state === "sent" && (
+          <>
+            <CheckCircle2 className="h-12 w-12 text-green-500" />
+            <p className="font-medium">{t("resendVerificationSent")}</p>
+            {isAuthed ? (
+              <Button
+                type="button"
+                className="w-full bg-brand-gradient text-white hover:opacity-90"
+                onClick={() => {
+                  router.push(tPath("/dashboard"));
+                  router.refresh();
+                }}
+              >
+                <LayoutDashboard className="mr-2 h-4 w-4" />
+                {t("goToDashboard")}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  router.push(tPath("/login"));
+                  router.refresh();
+                }}
+              >
+                <LogIn className="mr-2 h-4 w-4" />
+                {t("goToLogin")}
+              </Button>
+            )}
+          </>
+        )}
+
+        {state === "no-token" && (
+          <>
+            <Info className="h-12 w-12 text-blue-500" />
+            <p className="font-medium">{t("verifyEmailNoToken")}</p>
+            {isAuthed ? (
+              <Button
+                type="button"
+                className="w-full bg-brand-gradient text-white hover:opacity-90"
+                onClick={handleResend}
+                disabled={resending}
+              >
+                {resending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {t("resendVerification")}
+                  </>
+                ) : (
+                  <>
+                    <Send className="mr-2 h-4 w-4" />
+                    {t("resendVerification")}
+                  </>
+                )}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  router.push(tPath("/login"));
+                  router.refresh();
+                }}
+              >
+                <LogIn className="mr-2 h-4 w-4" />
+                {t("goToLogin")}
+              </Button>
+            )}
+          </>
+        )}
+
         {state === "invalid" && (
           <>
             <XCircle className="h-12 w-12 text-red-500" />
             <p className="font-medium">{t("verifyEmailInvalid")}</p>
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              onClick={() => {
-                router.push(tPath("/login"));
-                router.refresh();
-              }}
-            >
-              <LogIn className="mr-2 h-4 w-4" />
-              {t("goToLogin")}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              className="w-full"
-              onClick={() => {
-                router.push(tPath("/login"));
-                router.refresh();
-              }}
-            >
-              <Mail className="mr-2 h-4 w-4" />
-              {t("resendVerification")}
-            </Button>
+            {isAuthed ? (
+              <Button
+                type="button"
+                className="w-full bg-brand-gradient text-white hover:opacity-90"
+                onClick={handleResend}
+                disabled={resending}
+              >
+                {resending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {t("resendVerification")}
+                  </>
+                ) : (
+                  <>
+                    <Send className="mr-2 h-4 w-4" />
+                    {t("resendVerification")}
+                  </>
+                )}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  router.push(tPath("/login"));
+                  router.refresh();
+                }}
+              >
+                <LogIn className="mr-2 h-4 w-4" />
+                {t("goToLogin")}
+              </Button>
+            )}
           </>
         )}
 
@@ -167,18 +281,39 @@ export function VerifyEmailClient() {
           <>
             <Clock className="h-12 w-12 text-orange-500" />
             <p className="font-medium">{t("verifyEmailExpired")}</p>
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              onClick={() => {
-                router.push(tPath("/login"));
-                router.refresh();
-              }}
-            >
-              <Mail className="mr-2 h-4 w-4" />
-              {t("resendVerification")}
-            </Button>
+            {isAuthed ? (
+              <Button
+                type="button"
+                className="w-full bg-brand-gradient text-white hover:opacity-90"
+                onClick={handleResend}
+                disabled={resending}
+              >
+                {resending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {t("resendVerification")}
+                  </>
+                ) : (
+                  <>
+                    <Send className="mr-2 h-4 w-4" />
+                    {t("resendVerification")}
+                  </>
+                )}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  router.push(tPath("/login"));
+                  router.refresh();
+                }}
+              >
+                <LogIn className="mr-2 h-4 w-4" />
+                {t("goToLogin")}
+              </Button>
+            )}
           </>
         )}
       </CardContent>

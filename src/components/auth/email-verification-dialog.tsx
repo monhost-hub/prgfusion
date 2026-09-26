@@ -108,7 +108,7 @@ export function EmailVerificationDialog({
         <DialogFooter className="flex flex-col gap-2 sm:flex-col">
           {isAuthed ? (
             <>
-              {/* Authenticated but unverified — resend + go to verify page */}
+              {/* Authenticated but unverified — single action: resend verification email */}
               <Button
                 onClick={handleResend}
                 disabled={resending}
@@ -127,17 +127,9 @@ export function EmailVerificationDialog({
                   </>
                 )}
               </Button>
-              <Button
-                asChild
-                variant="outline"
-                size="sm"
-                className="w-full"
-              >
-                <a href={tPath("/verify-email")}>
-                  <MailCheck className="mr-2 h-4 w-4" />
-                  {t("verifyEmailTitle")}
-                </a>
-              </Button>
+              <p className="text-xs text-muted-foreground text-center mt-1">
+                {t("resendHintCheckInbox")}
+              </p>
             </>
           ) : (
             <>
