@@ -316,6 +316,16 @@ export default async function Page({
       <div className="mt-12 text-center text-xs text-muted-foreground max-w-2xl mx-auto">
         {t("guarantee")}
       </div>
+
+      {/* === SECTION 3 : TEST PAIEMENT $1 === */}
+      <div className="mt-8 text-center border-t border-border/40 pt-8">
+        <p className="text-xs text-muted-foreground mb-3">Test de paiement</p>
+        <PlanCheckoutButton
+          planSlug="test_1dollar"
+          label="Test paiement 1$"
+          featured={false}
+        />
+      </div>
     </div>
   );
 }
