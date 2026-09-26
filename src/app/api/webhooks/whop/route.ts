@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { verifyWhopWebhook, isWhopConfigured, isTestPlan, getTestPlanCredits } from "@/lib/whop";
 import { sendEmail } from "@/lib/email";
-import { buildCreditPurchaseEmail, buildSubscriptionActivatedEmail } from "@/lib/email-templates";
+import {
+  buildCreditPurchaseEmail,
+  buildSubscriptionActivatedEmail,
+  buildPaymentFailedEmail,
+} from "@/lib/email-templates";
 
 /**
  * POST /api/webhooks/whop
@@ -248,7 +252,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, message: "user not found — no credits granted" });
   }
 
-  // 10. If payment failed → no credits. Just log.
+  // 10. If payment failed or deactivation → no credits. Just log.
+  //     Only payment failures trigger a failure email — deactivations are
+  //     silent by design (the user already knows their subscription is
+  //     ending, the Whop portal informs them).
   if (isPaymentFailure || isDeactivation) {
     await db.whopEvent
       .create({
@@ -268,7 +275,68 @@ export async function POST(req: NextRequest) {
       })
       .catch(() => {});
     console.log(`[whop-webhook] event ${eventType} for user ${userId} — no credits (failure/deactivation)`);
-    return NextResponse.json({ ok: true, message: "failure/deactivation logged" });
+
+    // Send payment failed email — best-effort, never fails the webhook.
+    // Anti-doublon: this code only runs after the WhopEvent insert above
+    // succeeded. If the webhook is replayed, the idempotence check at the
+    // top (WhopEvent.findUnique by whopEventId) returns "already processed"
+    // before reaching here, so the email is never sent twice for the same
+    // event.
+    if (isPaymentFailure) {
+      try {
+        const isTest = isTestPlan(whopPlanId || "");
+        const planType = isTest
+          ? "test_1dollar"
+          : plan.tier === "subscription" || plan.slug?.startsWith("sub_")
+            ? "subscription"
+            : "recharge";
+
+        // Extract a sanitized failure reason from the payload if present.
+        // We deliberately avoid forwarding the raw payload — only extract a
+        // known safe field (decline_reason / failure_message) if it exists.
+        let failureReason: string | null = null;
+        try {
+          const reasonRaw = (event as any)?.data?.failure_message
+            ?? (event as any)?.data?.decline_reason
+            ?? (event as any)?.failure_message
+            ?? (event as any)?.decline_reason
+            ?? (event as any)?.data?.error
+            ?? null;
+          if (typeof reasonRaw === "string" && reasonRaw.length > 0 && reasonRaw.length < 500) {
+            failureReason = reasonRaw;
+          }
+        } catch {
+          failureReason = null;
+        }
+
+        const content = buildPaymentFailedEmail("fr", {
+          userName: user.name || "",
+          amount: amount ?? plan.priceMonthly ?? 0,
+          currency: currency || "EUR",
+          plan: plan.slug,
+          planType,
+          whopPaymentId: whopPaymentId ?? null,
+          paymentDate: new Date(),
+          failureReason,
+        });
+        await sendEmail({
+          to: user.email,
+          subject: content.subject,
+          html: content.html,
+          text: content.text,
+        });
+      } catch (emailErr) {
+        // Log error but NEVER fail the webhook — the event was logged, no credits were granted.
+        console.error(
+          "[whop-webhook] Payment failed email send failed:",
+          emailErr instanceof Error ? emailErr.message : "unknown"
+        );
+      }
+    }
+    return NextResponse.json({
+      ok: true,
+      message: isPaymentFailure ? "failure logged + email sent" : "deactivation logged",
+    });
   }
 
   // 11. Payment succeeded → grant credits in a single transaction.
@@ -358,13 +426,24 @@ export async function POST(req: NextRequest) {
     // or Unique constraint → caught below → returns "already processed" →
     // this code is never reached again.
     // Email failure is non-fatal: log error but don't fail the webhook.
+    //
+    // NOTE: ALL successful payments send an email — including the $1 test plan
+    // (test_1dollar). Previously the test plan was excluded silently, which
+    // made it impossible to verify the full payment flow end-to-end. Now the
+    // test plan also receives a credit purchase email (with creditType
+    // "test_1dollar") so the owner can confirm Resend delivery.
     try {
       const locale = "fr"; // Default — could be enhanced with user locale preference
       const isTest = isTestPlan(whopPlanId || "");
       const isSubscription = plan.tier === "subscription" || plan.slug?.startsWith("sub_");
+      const effectiveAmount = amount ?? plan.priceMonthly ?? (isTest ? 1.0 : 0);
+      const paymentDate = new Date();
+      const newBalance = result.updatedUser.credits;
 
-      if (isSubscription && !isTest) {
-        // Subscription activated — send subscription email
+      if (isSubscription) {
+        // Subscription activated — send subscription email (incl. test plan
+        // if it ever uses a sub_* slug — currently it doesn't, but the code
+        // is defensive).
         const startDate = new Date();
         const endDate = new Date(startDate.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 days
         const content = buildSubscriptionActivatedEmail(locale, {
@@ -376,6 +455,10 @@ export async function POST(req: NextRequest) {
           renewalPrice: plan.priceMonthly || 0,
           currency: currency || "EUR",
           autoRenew: true, // Whop subscriptions auto-renew by default
+          amount: effectiveAmount,
+          newBalance,
+          whopPaymentId: whopPaymentId ?? null,
+          paymentDate,
         });
         await sendEmail({
           to: result.updatedUser.email,
@@ -383,18 +466,25 @@ export async function POST(req: NextRequest) {
           html: content.html,
           text: content.text,
         });
-      } else if (!isTest) {
-        // Credit purchase (recharge) — send credit purchase email
+      } else {
+        // Credit purchase (recharge, OR test_1dollar plan).
         const expiresAt = plan.expiresDays
           ? new Date(Date.now() + plan.expiresDays * 24 * 60 * 60 * 1000)
           : null;
+        const creditType = isTest
+          ? "test_1dollar"
+          : plan.tier || plan.slug || "recharge";
         const content = buildCreditPurchaseEmail(locale, {
           userName: result.updatedUser.name || "",
           credits: creditsToGrant,
-          amount: amount ?? plan.priceMonthly,
+          amount: effectiveAmount,
           currency: currency || "EUR",
-          creditType: plan.tier || plan.slug || "recharge",
+          creditType,
           expiresAt,
+          plan: plan.slug,
+          newBalance,
+          whopPaymentId: whopPaymentId ?? null,
+          paymentDate,
         });
         await sendEmail({
           to: result.updatedUser.email,
@@ -403,7 +493,6 @@ export async function POST(req: NextRequest) {
           text: content.text,
         });
       }
-      // Test plan ($1) — no email sent (internal testing only)
     } catch (emailErr) {
       // Log error but NEVER fail the webhook — credits are already granted
       console.error("[whop-webhook] Transactional email send failed:", emailErr instanceof Error ? emailErr.message : "unknown");

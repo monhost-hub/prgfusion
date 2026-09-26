@@ -34,6 +34,14 @@ export interface CreditPurchaseEmailData {
   creditType: string;
   /** null = no expiration, Date = expires at this date */
   expiresAt: Date | null;
+  /** Plan slug (e.g. "recharge_small_normal", "test_1dollar"). Optional. */
+  plan?: string;
+  /** New balance after the credit grant. Optional (only set on actual purchases). */
+  newBalance?: number | null;
+  /** Whop payment id (reference). Optional. */
+  whopPaymentId?: string | null;
+  /** Payment date (when the Whop payment succeeded). Optional. */
+  paymentDate?: Date | null;
 }
 
 export interface SubscriptionActivatedEmailData {
@@ -46,6 +54,14 @@ export interface SubscriptionActivatedEmailData {
   currency: string;
   /** true = will auto-renew, false = will expire */
   autoRenew: boolean;
+  /** Amount paid for this billing period. Optional. */
+  amount?: number | null;
+  /** New balance after the credit grant. Optional. */
+  newBalance?: number | null;
+  /** Whop payment id (reference). Optional. */
+  whopPaymentId?: string | null;
+  /** Payment date (when the Whop payment succeeded). Optional. */
+  paymentDate?: Date | null;
 }
 
 export interface LowCreditsEmailData {
@@ -74,6 +90,22 @@ export interface SubscriptionExpiredEmailData {
 export interface PostExpirationFollowUpEmailData {
   userName: string;
   daysSinceExpiration: number;
+}
+
+export interface PaymentFailedEmailData {
+  userName: string;
+  amount: number;
+  currency: string;
+  /** Plan slug (e.g. "recharge_small_normal", "test_1dollar", "sub_starter"). */
+  plan: string;
+  /** "recharge" | "subscription" | "test_1dollar" — categorizes the failed purchase. */
+  planType: string;
+  /** Whop payment id (reference). Optional. */
+  whopPaymentId?: string | null;
+  /** When Whop recorded the failure. Optional. */
+  paymentDate?: Date | null;
+  /** Sanitized failure reason extracted from Whop payload, if available + safe. Optional. */
+  failureReason?: string | null;
 }
 
 // ============================================================================
@@ -217,38 +249,80 @@ export function buildCreditPurchaseEmail(localeRaw: string, data: CreditPurchase
   const expirationText = formatExpiration(data.expiresAt, locale);
   const priceText = formatPrice(data.amount, data.currency);
 
-  const body = locale === "fr"
+  // Build rows conditionally — only add optional rows if the data is provided.
+  type Row = { label: string; value: string };
+  const rows: Row[] = [
+    {
+      label: locale === "fr" ? "Crédits" : locale === "es" ? "Créditos" : "Credits",
+      value: String(data.credits),
+    },
+    {
+      label: locale === "fr" ? "Montant" : locale === "es" ? "Monto" : "Amount",
+      value: priceText,
+    },
+    {
+      label: locale === "fr" ? "Type" : locale === "es" ? "Tipo" : "Type",
+      value: data.creditType,
+    },
+    {
+      label: locale === "fr" ? "Expiration" : locale === "es" ? "Caducidad" : "Expiration",
+      value: expirationText,
+    },
+  ];
+
+  if (data.plan) {
+    rows.push({
+      label: locale === "fr" ? "Plan" : locale === "es" ? "Plan" : "Plan",
+      value: data.plan,
+    });
+  }
+  if (typeof data.newBalance === "number") {
+    rows.push({
+      label: locale === "fr" ? "Nouveau solde" : locale === "es" ? "Nuevo saldo" : "New balance",
+      value: String(data.newBalance) + " " + (locale === "fr" ? "crédits" : locale === "es" ? "créditos" : "credits"),
+    });
+  }
+  if (data.paymentDate) {
+    rows.push({
+      label: locale === "fr" ? "Date" : locale === "es" ? "Fecha" : "Date",
+      value: formatDate(data.paymentDate, locale),
+    });
+  }
+  if (data.whopPaymentId) {
+    rows.push({
+      label: locale === "fr" ? "Référence" : locale === "es" ? "Referencia" : "Reference",
+      value: data.whopPaymentId,
+    });
+  }
+
+  const rowsHtml = rows
+    .map(
+      (r) =>
+        `<tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">${r.label}</td><td style="padding: 8px 0; font-weight: 600; font-size: 14px; text-align: right;">${r.value}</td></tr>`
+    )
+    .join("\n         ");
+
+  const rowsText = rows.map((r) => `${r.label}: ${r.value}`).join("\n");
+
+  const intro = locale === "fr"
     ? `<p style="color: #4b5563; font-size: 15px; line-height: 1.6;">Bonjour ${name},</p>
-       <p style="color: #4b5563; font-size: 15px; line-height: 1.6; margin-top: 16px;">Votre achat a été confirmé :</p>
-       <table style="width: 100%; margin-top: 16px; border-collapse: collapse;">
-         <tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Crédits</td><td style="padding: 8px 0; font-weight: 600; font-size: 14px; text-align: right;">${data.credits}</td></tr>
-         <tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Montant</td><td style="padding: 8px 0; font-weight: 600; font-size: 14px; text-align: right;">${priceText}</td></tr>
-         <tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Type</td><td style="padding: 8px 0; font-weight: 600; font-size: 14px; text-align: right;">${data.creditType}</td></tr>
-         <tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Expiration</td><td style="padding: 8px 0; font-weight: 600; font-size: 14px; text-align: right;">${expirationText}</td></tr>
-       </table>`
+       <p style="color: #4b5563; font-size: 15px; line-height: 1.6; margin-top: 16px;">Votre achat a été confirmé :</p>`
     : locale === "es"
       ? `<p style="color: #4b5563; font-size: 15px; line-height: 1.6;">Hola ${name},</p>
-         <p style="color: #4b5563; font-size: 15px; line-height: 1.6; margin-top: 16px;">Tu compra ha sido confirmada:</p>
-         <table style="width: 100%; margin-top: 16px; border-collapse: collapse;">
-           <tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Créditos</td><td style="padding: 8px 0; font-weight: 600; font-size: 14px; text-align: right;">${data.credits}</td></tr>
-           <tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Monto</td><td style="padding: 8px 0; font-weight: 600; font-size: 14px; text-align: right;">${priceText}</td></tr>
-           <tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Tipo</td><td style="padding: 8px 0; font-weight: 600; font-size: 14px; text-align: right;">${data.creditType}</td></tr>
-           <tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Caducidad</td><td style="padding: 8px 0; font-weight: 600; font-size: 14px; text-align: right;">${expirationText}</td></tr>
-         </table>`
+         <p style="color: #4b5563; font-size: 15px; line-height: 1.6; margin-top: 16px;">Tu compra ha sido confirmada:</p>`
       : `<p style="color: #4b5563; font-size: 15px; line-height: 1.6;">Hello ${name},</p>
-         <p style="color: #4b5563; font-size: 15px; line-height: 1.6; margin-top: 16px;">Your purchase has been confirmed:</p>
-         <table style="width: 100%; margin-top: 16px; border-collapse: collapse;">
-           <tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Credits</td><td style="padding: 8px 0; font-weight: 600; font-size: 14px; text-align: right;">${data.credits}</td></tr>
-           <tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Amount</td><td style="padding: 8px 0; font-weight: 600; font-size: 14px; text-align: right;">${priceText}</td></tr>
-           <tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Type</td><td style="padding: 8px 0; font-weight: 600; font-size: 14px; text-align: right;">${data.creditType}</td></tr>
-           <tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Expiration</td><td style="padding: 8px 0; font-weight: 600; font-size: 14px; text-align: right;">${expirationText}</td></tr>
-         </table>`;
+         <p style="color: #4b5563; font-size: 15px; line-height: 1.6; margin-top: 16px;">Your purchase has been confirmed:</p>`;
+
+  const body = `${intro}
+       <table style="width: 100%; margin-top: 16px; border-collapse: collapse;">
+         ${rowsHtml}
+       </table>`;
 
   const bodyText = locale === "fr"
-    ? `Bonjour ${name},\n\nAchat confirmé :\nCrédits: ${data.credits}\nMontant: ${priceText}\nType: ${data.creditType}\nExpiration: ${expirationText}`
+    ? `Bonjour ${name},\n\nAchat confirmé :\n${rowsText}`
     : locale === "es"
-      ? `Hola ${name},\n\nCompra confirmada:\nCréditos: ${data.credits}\nMonto: ${priceText}\nTipo: ${data.creditType}\nCaducidad: ${expirationText}`
-      : `Hello ${name},\n\nPurchase confirmed:\nCredits: ${data.credits}\nAmount: ${priceText}\nType: ${data.creditType}\nExpiration: ${expirationText}`;
+      ? `Hola ${name},\n\nCompra confirmada:\n${rowsText}`
+      : `Hello ${name},\n\nPurchase confirmed:\n${rowsText}`;
 
   return {
     subject,
@@ -279,38 +353,79 @@ export function buildSubscriptionActivatedEmail(localeRaw: string, data: Subscri
     ? (locale === "fr" ? `Renouvellement automatique le ${endStr} (${priceText}/mois)` : locale === "es" ? `Renovación automática el ${endStr} (${priceText}/mes)` : `Auto-renewal on ${endStr} (${priceText}/month)`)
     : (locale === "fr" ? `Expire le ${endStr} (sans renouvellement automatique)` : locale === "es" ? `Caduca el ${endStr} (sin renovación automática)` : `Expires on ${endStr} (no auto-renewal)`);
 
-  const body = locale === "fr"
+  type Row = { label: string; value: string };
+  const rows: Row[] = [
+    {
+      label: locale === "fr" ? "Plan" : locale === "es" ? "Plan" : "Plan",
+      value: data.plan,
+    },
+    {
+      label: locale === "fr" ? "Crédits/mois" : locale === "es" ? "Créditos/mes" : "Credits/month",
+      value: String(data.credits),
+    },
+    {
+      label: locale === "fr" ? "Début" : locale === "es" ? "Inicio" : "Start",
+      value: startStr,
+    },
+    {
+      label: locale === "fr" ? "Renouvellement" : locale === "es" ? "Renovación" : "Renewal",
+      value: renewalText,
+    },
+  ];
+
+  if (typeof data.amount === "number") {
+    rows.push({
+      label: locale === "fr" ? "Montant payé" : locale === "es" ? "Monto pagado" : "Amount paid",
+      value: formatPrice(data.amount, data.currency),
+    });
+  }
+  if (typeof data.newBalance === "number") {
+    rows.push({
+      label: locale === "fr" ? "Nouveau solde" : locale === "es" ? "Nuevo saldo" : "New balance",
+      value: String(data.newBalance) + " " + (locale === "fr" ? "crédits" : locale === "es" ? "créditos" : "credits"),
+    });
+  }
+  if (data.paymentDate) {
+    rows.push({
+      label: locale === "fr" ? "Date" : locale === "es" ? "Fecha" : "Date",
+      value: formatDate(data.paymentDate, locale),
+    });
+  }
+  if (data.whopPaymentId) {
+    rows.push({
+      label: locale === "fr" ? "Référence" : locale === "es" ? "Referencia" : "Reference",
+      value: data.whopPaymentId,
+    });
+  }
+
+  const rowsHtml = rows
+    .map(
+      (r) =>
+        `<tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">${r.label}</td><td style="padding: 8px 0; font-weight: 600; font-size: 14px; text-align: right;">${r.value}</td></tr>`
+    )
+    .join("\n         ");
+
+  const rowsText = rows.map((r) => `${r.label}: ${r.value}`).join("\n");
+
+  const intro = locale === "fr"
     ? `<p style="color: #4b5563; font-size: 15px; line-height: 1.6;">Bonjour ${name},</p>
-       <p style="color: #4b5563; font-size: 15px; line-height: 1.6; margin-top: 16px;">Votre abonnement <strong>${data.plan}</strong> est actif.</p>
-       <table style="width: 100%; margin-top: 16px; border-collapse: collapse;">
-         <tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Plan</td><td style="padding: 8px 0; font-weight: 600; font-size: 14px; text-align: right;">${data.plan}</td></tr>
-         <tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Crédits/mois</td><td style="padding: 8px 0; font-weight: 600; font-size: 14px; text-align: right;">${data.credits}</td></tr>
-         <tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Début</td><td style="padding: 8px 0; font-weight: 600; font-size: 14px; text-align: right;">${startStr}</td></tr>
-         <tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Renouvellement</td><td style="padding: 8px 0; font-weight: 600; font-size: 14px; text-align: right;">${renewalText}</td></tr>
-       </table>`
+       <p style="color: #4b5563; font-size: 15px; line-height: 1.6; margin-top: 16px;">Votre abonnement <strong>${data.plan}</strong> est actif.</p>`
     : locale === "es"
       ? `<p style="color: #4b5563; font-size: 15px; line-height: 1.6;">Hola ${name},</p>
-         <p style="color: #4b5563; font-size: 15px; line-height: 1.6; margin-top: 16px;">Tu suscripción <strong>${data.plan}</strong> está activa.</p>
-         <table style="width: 100%; margin-top: 16px; border-collapse: collapse;">
-           <tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Plan</td><td style="padding: 8px 0; font-weight: 600; font-size: 14px; text-align: right;">${data.plan}</td></tr>
-           <tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Créditos/mes</td><td style="padding: 8px 0; font-weight: 600; font-size: 14px; text-align: right;">${data.credits}</td></tr>
-           <tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Inicio</td><td style="padding: 8px 0; font-weight: 600; font-size: 14px; text-align: right;">${startStr}</td></tr>
-           <tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Renovación</td><td style="padding: 8px 0; font-weight: 600; font-size: 14px; text-align: right;">${renewalText}</td></tr>
-         </table>`
+         <p style="color: #4b5563; font-size: 15px; line-height: 1.6; margin-top: 16px;">Tu suscripción <strong>${data.plan}</strong> está activa.</p>`
       : `<p style="color: #4b5563; font-size: 15px; line-height: 1.6;">Hello ${name},</p>
-         <p style="color: #4b5563; font-size: 15px; line-height: 1.6; margin-top: 16px;">Your <strong>${data.plan}</strong> subscription is active.</p>
-         <table style="width: 100%; margin-top: 16px; border-collapse: collapse;">
-           <tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Plan</td><td style="padding: 8px 0; font-weight: 600; font-size: 14px; text-align: right;">${data.plan}</td></tr>
-           <tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Credits/month</td><td style="padding: 8px 0; font-weight: 600; font-size: 14px; text-align: right;">${data.credits}</td></tr>
-           <tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Start</td><td style="padding: 8px 0; font-weight: 600; font-size: 14px; text-align: right;">${startStr}</td></tr>
-           <tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Renewal</td><td style="padding: 8px 0; font-weight: 600; font-size: 14px; text-align: right;">${renewalText}</td></tr>
-         </table>`;
+         <p style="color: #4b5563; font-size: 15px; line-height: 1.6; margin-top: 16px;">Your <strong>${data.plan}</strong> subscription is active.</p>`;
+
+  const body = `${intro}
+       <table style="width: 100%; margin-top: 16px; border-collapse: collapse;">
+         ${rowsHtml}
+       </table>`;
 
   const bodyText = locale === "fr"
-    ? `Bonjour ${name},\n\nAbonnement ${data.plan} activé.\nCrédits/mois: ${data.credits}\nDébut: ${startStr}\n${renewalText}`
+    ? `Bonjour ${name},\n\nAbonnement ${data.plan} activé.\n${rowsText}`
     : locale === "es"
-      ? `Hola ${name},\n\nSuscripción ${data.plan} activada.\nCréditos/mes: ${data.credits}\nInicio: ${startStr}\n${renewalText}`
-      : `Hello ${name},\n\nSubscription ${data.plan} activated.\nCredits/month: ${data.credits}\nStart: ${startStr}\n${renewalText}`;
+      ? `Hola ${name},\n\nSuscripción ${data.plan} activada.\n${rowsText}`
+      : `Hello ${name},\n\nSubscription ${data.plan} activated.\n${rowsText}`;
 
   return {
     subject,
@@ -490,6 +605,106 @@ export function buildPostExpirationFollowUpEmail(localeRaw: string, data: PostEx
   return {
     subject,
     html: wrapHtml(title, body + ctaHtml, locale),
+    text: buildTextVersion(title, bodyText, locale),
+  };
+}
+
+/**
+ * 8. Payment failed — sent when a Whop payment.failed webhook arrives.
+ *
+ * Important: this email explicitly tells the user that NO credits were added
+ * to their account, since the payment did not succeed.
+ */
+export function buildPaymentFailedEmail(localeRaw: string, data: PaymentFailedEmailData): EmailContent {
+  const locale = normalizeLocale(localeRaw);
+
+  const subject = locale === "fr"
+    ? `Paiement échoué — ${data.plan}`
+    : locale === "es"
+      ? `Pago fallido — ${data.plan}`
+      : `Payment failed — ${data.plan}`;
+
+  const title = subject;
+  const name = data.userName || "";
+  const priceText = formatPrice(data.amount, data.currency);
+
+  type Row = { label: string; value: string };
+  const rows: Row[] = [
+    {
+      label: locale === "fr" ? "Plan" : locale === "es" ? "Plan" : "Plan",
+      value: data.plan,
+    },
+    {
+      label: locale === "fr" ? "Type" : locale === "es" ? "Tipo" : "Type",
+      value: data.planType,
+    },
+    {
+      label: locale === "fr" ? "Montant" : locale === "es" ? "Monto" : "Amount",
+      value: priceText,
+    },
+  ];
+
+  if (data.paymentDate) {
+    rows.push({
+      label: locale === "fr" ? "Date" : locale === "es" ? "Fecha" : "Date",
+      value: formatDate(data.paymentDate, locale),
+    });
+  }
+  if (data.whopPaymentId) {
+    rows.push({
+      label: locale === "fr" ? "Référence" : locale === "es" ? "Referencia" : "Reference",
+      value: data.whopPaymentId,
+    });
+  }
+  if (data.failureReason) {
+    rows.push({
+      label: locale === "fr" ? "Motif" : locale === "es" ? "Motivo" : "Reason",
+      value: data.failureReason,
+    });
+  }
+
+  const rowsHtml = rows
+    .map(
+      (r) =>
+        `<tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">${r.label}</td><td style="padding: 8px 0; font-weight: 600; font-size: 14px; text-align: right;">${r.value}</td></tr>`
+    )
+    .join("\n         ");
+
+  const rowsText = rows.map((r) => `${r.label}: ${r.value}`).join("\n");
+
+  const intro = locale === "fr"
+    ? `<p style="color: #4b5563; font-size: 15px; line-height: 1.6;">Bonjour ${name},</p>
+       <p style="color: #4b5563; font-size: 15px; line-height: 1.6; margin-top: 16px;">Votre paiement n'a pas pu aboutir :</p>
+       <p style="color: #dc2626; font-size: 14px; line-height: 1.6; margin-top: 16px; font-weight: 600;">⚠️ Aucun crédit n'a été ajouté à votre compte.</p>`
+    : locale === "es"
+      ? `<p style="color: #4b5563; font-size: 15px; line-height: 1.6;">Hola ${name},</p>
+         <p style="color: #4b5563; font-size: 15px; line-height: 1.6; margin-top: 16px;">Tu pago no pudo completarse:</p>
+         <p style="color: #dc2626; font-size: 14px; line-height: 1.6; margin-top: 16px; font-weight: 600;">⚠️ No se añadieron créditos a tu cuenta.</p>`
+      : `<p style="color: #4b5563; font-size: 15px; line-height: 1.6;">Hello ${name},</p>
+         <p style="color: #4b5563; font-size: 15px; line-height: 1.6; margin-top: 16px;">Your payment could not be completed:</p>
+         <p style="color: #dc2626; font-size: 14px; line-height: 1.6; margin-top: 16px; font-weight: 600;">⚠️ No credits were added to your account.</p>`;
+
+  const retryHint = locale === "fr"
+    ? `<p style="color: #4b5563; font-size: 14px; line-height: 1.6; margin-top: 16px;">Vous pouvez réessayer depuis la page Tarifs. Si le problème persiste, contactez <a href="mailto:support@allcombiner.com" style="color: #6366f1;">support@allcombiner.com</a>.</p>`
+    : locale === "es"
+      ? `<p style="color: #4b5563; font-size: 14px; line-height: 1.6; margin-top: 16px;">Puedes intentarlo de nuevo desde la página Precios. Si el problema persiste, contacta a <a href="mailto:support@allcombiner.com" style="color: #6366f1;">support@allcombiner.com</a>.</p>`
+      : `<p style="color: #4b5563; font-size: 14px; line-height: 1.6; margin-top: 16px;">You can retry from the Pricing page. If the issue persists, contact <a href="mailto:support@allcombiner.com" style="color: #6366f1;">support@allcombiner.com</a>.</p>`;
+
+  const body = `${intro}
+       <table style="width: 100%; margin-top: 16px; border-collapse: collapse;">
+         ${rowsHtml}
+       </table>
+       ${retryHint}`;
+
+  const bodyText = locale === "fr"
+    ? `Bonjour ${name},\n\nVotre paiement n'a pas pu aboutir.\n\n⚠️ Aucun crédit n'a été ajouté à votre compte.\n\n${rowsText}\n\nVous pouvez réessayer depuis la page Tarifs. Si le problème persiste, contactez support@allcombiner.com.`
+    : locale === "es"
+      ? `Hola ${name},\n\nTu pago no pudo completarse.\n\n⚠️ No se añadieron créditos a tu cuenta.\n\n${rowsText}\n\nPuedes intentarlo de nuevo desde la página Precios. Si el problema persiste, contacta a support@allcombiner.com.`
+      : `Hello ${name},\n\nYour payment could not be completed.\n\n⚠️ No credits were added to your account.\n\n${rowsText}\n\nYou can retry from the Pricing page. If the issue persists, contact support@allcombiner.com.`;
+
+  return {
+    subject,
+    html: wrapHtml(title, body, locale),
     text: buildTextVersion(title, bodyText, locale),
   };
 }
