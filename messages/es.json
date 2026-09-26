@@ -118,7 +118,13 @@
     "errorFileType": "Formato no soportado. Usa JPG, PNG o WEBP.",
     "errorFileSize": "Archivo demasiado grande. Máx 10 MB.",
     "errorFileDim": "Las dimensiones superan 4096 px. Usa una imagen más pequeña.",
-    "previewAlt": "Resultado de fusión"
+    "previewAlt": "Resultado de fusión",
+    "tierQuick": "Quick",
+    "tierQuickDesc": "Rápido y económico, ideal para vistas previas y borradores.",
+    "tierStudio": "Studio",
+    "tierStudioDesc": "Equilibrio entre calidad y velocidad, ideal para creaciones diarias.",
+    "tierPrecision": "Precision",
+    "tierPrecisionDesc": "Alta fidelidad, ideal para retratos y renders finales."
   },
   "Pricing": {
     "pageTitle": "Precios",

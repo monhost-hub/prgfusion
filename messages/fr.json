@@ -118,7 +118,13 @@
     "errorFileType": "Format non supporté. Utilisez JPG, PNG ou WEBP.",
     "errorFileSize": "Fichier trop volumineux. Max 10 Mo.",
     "errorFileDim": "Les dimensions dépassent 4096 px. Utilisez une image plus petite.",
-    "previewAlt": "Résultat de fusion"
+    "previewAlt": "Résultat de fusion",
+    "tierQuick": "Quick",
+    "tierQuickDesc": "Rapide et économique, idéal pour les aperçus et brouillons.",
+    "tierStudio": "Studio",
+    "tierStudioDesc": "Équilibre qualité et vitesse, idéal pour les créations quotidiennes.",
+    "tierPrecision": "Precision",
+    "tierPrecisionDesc": "Haute fidélité, idéal pour les portraits et rendus finaux."
   },
   "Pricing": {
     "pageTitle": "Tarifs",

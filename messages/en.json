@@ -118,7 +118,13 @@
     "errorFileType": "Unsupported file type. Use JPG, PNG or WEBP.",
     "errorFileSize": "File is too large. Max 10 MB.",
     "errorFileDim": "Image dimensions exceed 4096px. Please use a smaller image.",
-    "previewAlt": "Fusion result"
+    "previewAlt": "Fusion result",
+    "tierQuick": "Quick",
+    "tierQuickDesc": "Fast and affordable, ideal for previews and drafts.",
+    "tierStudio": "Studio",
+    "tierStudioDesc": "Balanced quality and speed, ideal for everyday creations.",
+    "tierPrecision": "Precision",
+    "tierPrecisionDesc": "High fidelity, ideal for portraits and final renders."
   },
   "Pricing": {
     "pageTitle": "Pricing",

@@ -74,6 +74,52 @@ async function convertToPngDataUrl(file: File, maxDim = 1024): Promise<string | 
 
 const STEPS = ["progressUploading", "progressAnalyzing", "progressFusing", "progressRendering"] as const;
 
+/**
+ * UI tier metadata — Quick / Studio / Precision.
+ *
+ * The /fusion page displays three commercial tiers mapped 1:1 to AIModel
+ * rows by `creditCost` (1 / 2 / 3). The technical `name` (e.g. "Nano
+ * Banana 2 Lite") is NEVER shown to the end user — only the commercial
+ * tier name (Quick / Studio / Precision) and its description appear.
+ *
+ * The DB `id` is still sent to the backend as `modelId` so the backend
+ * fetches the actual AIModel row (with its `providerId`) and calls
+ * OpenRouter with the correct `providerModelId`. No silent substitution.
+ *
+ * If a model row has a `creditCost` not in {1, 2, 3}, returns null and
+ * the row is hidden from the selector (defensive — should not happen
+ * given the seed, but protects against admin misconfiguration).
+ */
+interface UiTier {
+  uiName: string;
+  uiDescription: string;
+}
+
+function getTierForCreditCost(
+  creditCost: number,
+  tFusion: (key: string) => string
+): UiTier | null {
+  if (creditCost === 1) {
+    return {
+      uiName: tFusion("tierQuick"),
+      uiDescription: tFusion("tierQuickDesc"),
+    };
+  }
+  if (creditCost === 2) {
+    return {
+      uiName: tFusion("tierStudio"),
+      uiDescription: tFusion("tierStudioDesc"),
+    };
+  }
+  if (creditCost === 3) {
+    return {
+      uiName: tFusion("tierPrecision"),
+      uiDescription: tFusion("tierPrecisionDesc"),
+    };
+  }
+  return null;
+}
+
 export function FusionPage() {
   const t = useTranslations("Fusion");
   const tCommon = useTranslations("Common");
@@ -303,6 +349,14 @@ export function FusionPage() {
             {/* Sélecteur de modèle */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               {models.map((m) => {
+                // Map the DB model row to a UI tier (Quick / Studio / Precision)
+                // based on its `creditCost`. Models with an unknown creditCost
+                // (not 1/2/3) are hidden from the selector — defensive guard
+                // against admin misconfiguration.
+                const tier = getTierForCreditCost(m.creditCost, t);
+                if (!tier) {
+                  return null;
+                }
                 const isSelected = m.id === selectedModelId;
                 const canAfford = userCredits === null || userCredits >= m.creditCost;
                 return (
@@ -324,10 +378,10 @@ export function FusionPage() {
                     )}
                     <div className="flex items-center gap-2 mb-1">
                       <Zap className="h-4 w-4 text-primary" />
-                      <h3 className="font-semibold text-sm">{m.name}</h3>
+                      <h3 className="font-semibold text-sm">{tier.uiName}</h3>
                     </div>
                     <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
-                      {m.description}
+                      {tier.uiDescription}
                     </p>
                     <div className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 px-2 py-0.5 text-xs font-medium">
                       <Coins className="h-3 w-3" />

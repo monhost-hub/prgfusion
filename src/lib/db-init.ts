@@ -40,35 +40,41 @@ OUTPUT:
 const DEFAULT_MODELS = [
   {
     name: "Nano Banana 2 Lite",
-    providerId: "google/gemini-3.1-flash-image-preview",
+    providerId: "google/gemini-3.1-flash-lite-image",
     provider: "openrouter",
     description: "Le plus rapide. Idéal pour les aperçus et brouillons. ~9s par fusion.",
     costPerCall: 0.02,
-    creditCost: 1, // ← 1 crédit par fusion
+    creditCost: 1, // ← 1 crédit par fusion (Quick)
     enabled: 1,
     isActive: 1, // ← modèle par défaut sélectionné dans l'UI
   },
   {
     name: "Nano Banana 2",
-    providerId: "google/gemini-3.1-flash-image-preview",
+    providerId: "google/gemini-3.1-flash-image",
     provider: "openrouter",
     description: "Qualité équilibrée pour un usage quotidien. ~9s par fusion.",
     costPerCall: 0.067,
-    creditCost: 2, // ← 2 crédits par fusion
+    creditCost: 2, // ← 2 crédits par fusion (Studio)
     enabled: 1,
     isActive: 0,
   },
   {
     name: "Nano Banana Pro",
-    providerId: "google/gemini-3.1-flash-image-preview",
+    providerId: "google/gemini-3-pro-image",
     provider: "openrouter",
     description: "Fidélité maximale. Idéal pour portraits, tirages, livraison finale.",
     costPerCall: 0.12,
-    creditCost: 3, // ← 3 crédits par fusion
+    creditCost: 3, // ← 3 crédits par fusion (Precision)
     enabled: 1,
     isActive: 0,
   },
 ];
+
+// Legacy providerId that was previously used for ALL three default models.
+// After Phase "Quick/Studio/Precision", each model has its own distinct
+// providerId, but older DB rows may still point to this legacy value. The
+// seeding loop below uses this constant to detect and migrate those rows.
+const LEGACY_PROVIDER_ID = "google/gemini-3.1-flash-image-preview";
 
 const DEFAULT_PLANS = [
   {
@@ -571,10 +577,51 @@ async function doInit(): Promise<void> {
       console.log("[db-init] Admin already exists");
     }
 
-    // 3. Seed AI models
+    // 3. Seed AI models — sync existing rows by `name` (stable identifier).
+    //    The `id` is a cuid generated at insertion time, so it differs
+    //    between environments. The `name` is the stable identifier.
+    //
+    //    For each DEFAULT_MODEL:
+    //      - If a row with the same `name` exists → UPDATE its providerId,
+    //        description, costPerCall, creditCost, enabled, isActive, provider.
+    //        This is critical for the Quick/Studio/Precision migration: the
+    //        three existing rows in production still point to the legacy
+    //        `providerId` "google/gemini-3.1-flash-image-preview". We need to
+    //        re-point them to the new distinct providerId values.
+    //      - Else → CREATE a new row.
+    //
+    //    We never DELETE rows (admin may have created custom models). We
+    //    only sync the 3 default ones by name.
     for (const m of DEFAULT_MODELS) {
-      const existing = await db.aIModel.findFirst({ where: { providerId: m.providerId, name: m.name } }).catch(() => null);
-      if (!existing) {
+      const existing = await db.aIModel.findFirst({ where: { name: m.name } }).catch(() => null);
+      if (existing) {
+        // Update the existing row with the latest seed values — this is
+        // the only place where `providerId` is corrected in production.
+        const needsUpdate =
+          existing.providerId !== m.providerId ||
+          existing.provider !== m.provider ||
+          (existing.description ?? "") !== m.description ||
+          existing.costPerCall !== m.costPerCall ||
+          existing.creditCost !== m.creditCost ||
+          existing.enabled !== Boolean(m.enabled) ||
+          existing.isActive !== Boolean(m.isActive);
+        if (needsUpdate) {
+          await db.aIModel.update({
+            where: { id: existing.id },
+            data: {
+              providerId: m.providerId,
+              provider: m.provider,
+              description: m.description,
+              costPerCall: m.costPerCall,
+              creditCost: m.creditCost,
+              enabled: Boolean(m.enabled),
+              isActive: Boolean(m.isActive),
+              updatedAt: new Date(),
+            },
+          }).catch((e: any) => console.warn(`[db-init] Model update failed: ${e.message}`));
+          console.log(`[db-init] ✓ Model synced: ${m.name} (providerId: ${m.providerId}, creditCost: ${m.creditCost})`);
+        }
+      } else {
         const id = `model_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
         await db.aIModel.create({
           data: {
@@ -590,14 +637,37 @@ async function doInit(): Promise<void> {
             updatedAt: new Date(),
           },
         }).catch((e: any) => console.warn(`[db-init] Model create failed: ${e.message}`));
-        console.log(`[db-init] ✓ Model created: ${m.name} (creditCost: ${m.creditCost})`);
+        console.log(`[db-init] ✓ Model created: ${m.name} (providerId: ${m.providerId}, creditCost: ${m.creditCost})`);
+      }
+    }
+
+    // 3b. Migrate or disable any AIModel rows that still use the legacy
+    //     providerId "google/gemini-3.1-flash-image-preview" (the value that
+    //     was previously shared by all three default models). These rows
+    //     are NOT among the 3 DEFAULT_MODELS (otherwise they would have
+    //     been updated by the loop above). They are either:
+    //       - Duplicates created by an older seed version (pre-sync logic)
+    //       - Custom models manually created by an admin with the legacy ID
+    //     In both cases, we disable them so /api/models (which filters on
+    //     enabled=true) no longer returns them. The user-facing Quick /
+    //     Studio / Precision selector only sees the 3 default models.
+    const legacyModels = await db.aIModel.findMany({
+      where: { providerId: LEGACY_PROVIDER_ID },
+    }).catch(() => []);
+    for (const lm of legacyModels) {
+      if (lm.enabled) {
+        await db.aIModel.update({
+          where: { id: lm.id },
+          data: { enabled: false, updatedAt: new Date() },
+        }).catch(() => {});
+        console.log(`[db-init] ✓ Disabled legacy model: ${lm.name} (id=${lm.id}, providerId=${LEGACY_PROVIDER_ID})`);
       }
     }
 
     // Ensure exactly one active model
-    const activeCount = await db.aIModel.count({ where: { isActive: true } }).catch(() => 0);
+    const activeCount = await db.aIModel.count({ where: { isActive: true, enabled: true } }).catch(() => 0);
     if (activeCount === 0) {
-      const first = await db.aIModel.findFirst({ orderBy: { createdAt: "asc" } }).catch(() => null);
+      const first = await db.aIModel.findFirst({ where: { enabled: true }, orderBy: { createdAt: "asc" } }).catch(() => null);
       if (first) {
         await db.aIModel.update({ where: { id: first.id }, data: { isActive: true, updatedAt: new Date() } }).catch(() => {});
         console.log(`[db-init] ✓ Activated default model: ${first.name}`);
